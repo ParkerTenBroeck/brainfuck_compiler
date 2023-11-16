@@ -17,41 +17,6 @@ extern "C" fn bruh() -> i32{
     1
 }
 
-static BASIC_2: &[u8] = include_bytes!("../xtra/out/raw.bin");
-
-static BASIC: &[u8] = &[
-    // void test(int val){
-    //     for(int i = 0; i < val; i ++){
-    //         print(i);
-    //     }
-    // }
-    0x85, 0xff, //test edi, edi
-    0x7e, 0x24, //jle 17
-    0x55, //push   %rbp
-    0x89, 0xfd, //   	mov    %edi,%ebp
-    0x53, //  	push   %rbx
-    0x31, 0xdb, //   	xor    %ebx,%ebx
-    0x48, 0x83, 0xec, 0x08, //     	sub    $0x8,%rsp
-    0x66, 0x90, //   	xchg   %ax,%ax
-    0x89, 0xdf, //   	mov    %ebx,%edi
-    0x83, 0xc3, 0x01, //    	add    $0x1,%ebx
-    0xe8, 0x0f, 0x00, 0x00,
-    0x00, //       	call   4011a0 <_Z5printi> (really calls the special thing at the end of the function)
-    0x39, 0xdd, //   	cmp    %ebx,%ebp
-    0x75, 0xf2, //   	jne    4011c0 <_Z4testi+0x10>
-    0x48, 0x83, 0xc4, 0x08, //   	add    $0x8,%rsp
-    0x5b, //  	pop    %rbx
-    0x5d, //  	pop    %rbp
-    0xc3, //  	ret
-    0x0f, 0x1f, 0x00, //   	nopl   (%rax)
-    0xc3, //    ret
-    // how we dynamic link
-    // the address between the blocks is replaced at runtime with the real
-    // address of the function we want to call
-    0x49, 0xbb, /*replace*/ 0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x32, 0x01, /*replace*/
-    //movabs () -> r11
-    0x41, 0xff, 0xe3, // jmp r11
-];
 
 
 unsafe fn reflect(instructions: &[u8], relocs: DynRelocs, dyn_syms: &HashMap<String, usize>) {
@@ -68,14 +33,6 @@ unsafe fn reflect(instructions: &[u8], relocs: DynRelocs, dyn_syms: &HashMap<Str
     std::ptr::copy(instructions.as_ptr(), map.data(), instructions.len());
 
     let slice = std::slice::from_raw_parts_mut(map.data(), instructions.len());
-
-    // let address = 0x000000000000005e + 2usize;
-
-    // let address: &mut [u8; 8] = (&mut slice[address..(address + 8)]).try_into().unwrap();
-
-    // let bruh: extern "C" fn(i32) = print;
-    // let val = bruh as *const ();
-    // *address = (val as usize).to_le_bytes();
 
     for reloc in relocs{
         let addr = *dyn_syms.get(reloc.0).unwrap();
