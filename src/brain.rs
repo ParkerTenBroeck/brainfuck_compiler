@@ -1,74 +1,75 @@
-use std::{str::Chars, iter::Peekable};
+use std::{iter::Peekable, str::Chars};
 
-
-pub struct BrainInterpret{
+pub struct BrainInterpret {
     data: [u8; 0x1000],
     position: usize,
 }
 
-impl BrainInterpret{
-    pub fn new() -> Self{
-        Self { data: [0; 0x1000], position: 0 }
+impl BrainInterpret {
+    pub fn new() -> Self {
+        Self {
+            data: [0; 0x1000],
+            position: 0,
+        }
     }
-    pub fn interpret(&mut self, code: &Vec<Terminal>){
-        for term in code{
+    pub fn interpret(&mut self, code: &Vec<Terminal>) {
+        for term in code {
             self.run_term(term);
         }
     }
 
-    pub fn interpret_1(&mut self, code: &Vec<Terminal>){
-        while self.data[self.position] != 0{
-            for term in code{
+    pub fn interpret_1(&mut self, code: &Vec<Terminal>) {
+        while self.data[self.position] != 0 {
+            for term in code {
                 self.run_term(term);
             }
         }
     }
 
-    fn run_term(&mut self, term: &Terminal){
-        match term{
+    fn run_term(&mut self, term: &Terminal) {
+        match term {
             Terminal::If(term) => {
                 self.interpret_1(term);
-            },
+            }
             Terminal::IncrementPointer(val) => {
                 self.position += *val;
-            },
+            }
             Terminal::DecrementPointer(val) => {
                 self.position -= *val;
-            },
+            }
             Terminal::IncrementValue(val) => {
                 self.data[self.position] += (*val) as u8;
-            },
+            }
             Terminal::DecrementValue(val) => {
                 self.data[self.position] -= (*val) as u8;
-            },
+            }
             Terminal::Output => {
                 print!("{}", self.data[self.position] as char);
-            },
+            }
             Terminal::Input => todo!(),
         }
     }
 }
 
-
-pub struct Brain<'a>{
+pub struct Brain<'a> {
     chars: Peekable<Chars<'a>>,
     data: &'a str,
     tmp_count: usize,
 }
 
 #[derive(Debug)]
-pub enum Terminal{
+pub enum Terminal {
     If(Vec<Terminal>),
     IncrementPointer(usize),
     DecrementPointer(usize),
     IncrementValue(usize),
     DecrementValue(usize),
     Output,
-    Input
+    Input,
 }
 
 #[test]
-fn bruh(){
+fn bruh() {
     let code = r#"
     [ This program prints "Hello World!" and a newline to the screen, its
     length is 106 active command characters. [It is not the shortest.]
@@ -117,19 +118,25 @@ fn bruh(){
     let bf = Brain::new(code).parse();
     println!("{:#?}", bf);
     BrainInterpret::new().interpret(&bf);
-    println!("{}", codegen(&bf));
+    let mut visiter = StringSudoCode::new();
+    codegen(&bf, &mut visiter);
+    println!("{}", visiter.buffer);
 }
 
-impl<'a> Brain<'a>{
-    pub fn new(data: &'a str) -> Self{
-        Self { chars: data.chars().peekable(), data, tmp_count: 0 }
+impl<'a> Brain<'a> {
+    pub fn new(data: &'a str) -> Self {
+        Self {
+            chars: data.chars().peekable(),
+            data,
+            tmp_count: 0,
+        }
     }
 
-    pub fn parse(&mut self) -> Vec<Terminal>{
+    pub fn parse(&mut self) -> Vec<Terminal> {
         let mut top = Vec::new();
         let mut stack = Vec::new();
 
-        enum State{
+        enum State {
             Default,
             IncPtr,
             DecPtr,
@@ -140,11 +147,11 @@ impl<'a> Brain<'a>{
         let mut val: usize = 0;
         let mut state = State::Default;
 
-        while let Some(char) = self.chars.peek(){
+        while let Some(char) = self.chars.peek() {
             let mut consume = true;
-            match state{
+            match state {
                 State::Default => {
-                    match char{
+                    match char {
                         '+' => state = State::IncVal,
                         '>' => state = State::IncPtr,
                         '-' => state = State::DecVal,
@@ -154,33 +161,33 @@ impl<'a> Brain<'a>{
                         '[' => {
                             stack.push(top);
                             top = Vec::new();
-                        },
+                        }
                         ']' => {
                             let mut tmp: Vec<Terminal> = stack.pop().unwrap();
                             // if the first statement in our program is an if statement
-                            // uh dont include it 
-                            if !(stack.is_empty() && tmp.is_empty()){
+                            // uh dont include it
+                            if !(stack.is_empty() && tmp.is_empty()) {
                                 tmp.push(Terminal::If(top));
                             }
                             top = tmp;
-                        },
+                        }
                         _ => {}
                     }
-                    match char{
+                    match char {
                         '+' | '>' | '-' | '<' => val += 1,
                         _ => {}
                     }
+                }
+                State::IncPtr => match char {
+                    '>' => val += 1,
+                    _ => {
+                        top.push(Terminal::IncrementPointer(val));
+                        state = State::Default;
+                        val = 0;
+                        consume = false;
+                    }
                 },
-                State::IncPtr => match char{
-                        '>' => val += 1,
-                        _ => {
-                            top.push(Terminal::IncrementPointer(val));
-                            state = State::Default;
-                            val = 0;
-                            consume = false;
-                        }
-                    },
-                State::DecPtr => match char{
+                State::DecPtr => match char {
                     '<' => val += 1,
                     _ => {
                         top.push(Terminal::DecrementPointer(val));
@@ -189,7 +196,7 @@ impl<'a> Brain<'a>{
                         consume = false;
                     }
                 },
-                State::IncVal => match char{
+                State::IncVal => match char {
                     '+' => val += 1,
                     _ => {
                         top.push(Terminal::IncrementValue(val));
@@ -198,7 +205,7 @@ impl<'a> Brain<'a>{
                         consume = false;
                     }
                 },
-                State::DecVal => match char{
+                State::DecVal => match char {
                     '-' => val += 1,
                     _ => {
                         top.push(Terminal::DecrementValue(val));
@@ -208,7 +215,7 @@ impl<'a> Brain<'a>{
                     }
                 },
             }
-            if consume{
+            if consume {
                 self.chars.next();
             }
         }
@@ -219,24 +226,12 @@ impl<'a> Brain<'a>{
     }
 }
 
-
-fn codegen(code: &Vec<Terminal>) -> String{
-    let mut string = String::new();
-
-    for terminal in code{
-        codegen_terminal(&mut string, terminal, 0);
-    }
-
-    string
-}
-
 use std::fmt::Write;
 
-
-trait Visiter{
+trait Visiter {
     fn if_start(&mut self);
     fn if_end(&mut self);
-    
+
     fn visit_increment_val(&mut self, val: usize);
     fn visit_decrement_val(&mut self, val: usize);
     fn visit_increment_ptr(&mut self, val: usize);
@@ -245,35 +240,59 @@ trait Visiter{
     fn visit_read(&mut self);
 }
 
-struct StringSudoCode{
+struct StringSudoCode {
     buffer: String,
     level: usize,
+    label_next: usize,
+    labels: Vec<usize>,
 }
 
-impl StringSudoCode{
-    pub fn new() -> Self{
-        Self { buffer: String::new(), level: 0 }
+impl StringSudoCode {
+    pub fn new() -> Self {
+        Self {
+            buffer: String::new(),
+            level: 0,
+            label_next: 0,
+            labels: Vec::new(),
+        }
     }
 
+    fn next_label(&mut self) -> usize{
+        self.labels.push(self.label_next);
+        self.label_next += 1;
+        self.label_next - 1
+    }
 
-    fn white_space(&mut self){
-        for _ in 0..self.level{
+    fn pop_lable(&mut self) -> usize{
+        self.labels.pop().unwrap()
+    }
+
+    fn white_space(&mut self) {
+        for _ in 0..self.level {
             self.buffer.push(' ');
         }
     }
 }
 
-impl Visiter for StringSudoCode{
+impl Visiter for StringSudoCode {
     fn if_start(&mut self) {
-        self.level += 1;
         self.white_space();
-        writeln!(&mut self.buffer, "LOOP START: {}", self.level).unwrap();
+        let tmp = self.next_label();
+
+        // writeln!(&mut self.buffer, "cmp byte ptr [rdi], 0").unwrap();
+        // writeln!(&mut self.buffer, "je LOOP_END_{tmp}").unwrap();
+        // writeln!(&mut self.buffer, "LOOP_START_{tmp}:").unwrap();
+        //cmp     byte ptr [rdi], 0
+        //je      .LBB1_1
+        writeln!(&mut self.buffer, "LOOP START: L{} C{tmp}", self.level).unwrap();
+        self.level += 1;
     }
 
     fn if_end(&mut self) {
         self.level -= 1;
         self.white_space();
-        writeln!(&mut self.buffer, "LOOP END: {}", self.level).unwrap();
+        let tmp = self.pop_lable();
+        writeln!(&mut self.buffer, "LOOP END: :{} C{tmp}", self.level).unwrap();
     }
 
     fn visit_increment_val(&mut self, val: usize) {
@@ -307,35 +326,31 @@ impl Visiter for StringSudoCode{
     }
 }
 
-
-fn white_space(buf: &mut String, level: usize){
-    for _ in 0..level{
-        buf.push(' ');
+fn codegen(code: &Vec<Terminal>, visiter: &mut impl Visiter) {
+    for terminal in code {
+        codegen_terminal(terminal, visiter);
     }
 }
 
-fn codegen_1(buf: &mut String, code: &Vec<Terminal>, level: usize) {
-    white_space(buf, level);
-    writeln!(buf, "LOOP START: {level}").unwrap();
-    for terminal in code{
-        codegen_terminal(buf, terminal, level);
+fn codegen_1(code: &Vec<Terminal>, visiter: &mut impl Visiter) {
+    for terminal in code {
+        codegen_terminal(terminal, visiter);
     }
-    white_space(buf, level);
-    writeln!(buf, "LOOP END: {level}").unwrap();
 }
 
-fn codegen_terminal(buf: &mut String, term: &Terminal, level: usize) {
-    match term{
-        Terminal::If(term) => codegen_1(buf, term, level + 1),
-        _ => white_space(buf, level),
-    }
-    match term{
-        Terminal::IncrementPointer(inc) => writeln!(buf, "Inc Ptr{inc}").unwrap(),
-        Terminal::DecrementPointer(dec) => writeln!(buf, "Dec Ptr{dec}").unwrap(),
-        Terminal::IncrementValue(inc) => writeln!(buf, "Inc Val{inc}").unwrap(),
-        Terminal::DecrementValue(dec) => writeln!(buf, "Dec Val{dec}").unwrap(),
-        Terminal::Output => writeln!(buf, "OUTPUT").unwrap(),
-        Terminal::Input => writeln!(buf, "INPUT").unwrap(),
-        _ => {}
+fn codegen_terminal(term: &Terminal, visiter: &mut impl Visiter) {
+    match term {
+        Terminal::If(term) => {
+            visiter.if_start();
+            codegen_1(term, visiter);
+            visiter.if_end();
+        }
+        Terminal::IncrementPointer(inc) => visiter.visit_increment_ptr(*inc),
+        Terminal::DecrementPointer(dec) => visiter.visit_decrement_ptr(*dec),
+        Terminal::IncrementValue(inc) => visiter.visit_increment_val(*inc),
+        Terminal::DecrementValue(dec) => visiter.visit_decrement_val(*dec),
+        Terminal::Output => visiter.visit_print(),
+        Terminal::Input => visiter.visit_read(),
     }
 }
+
