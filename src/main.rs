@@ -1,9 +1,9 @@
 #![feature(tuple_trait)]
 #![feature(fn_traits)]
 #![feature(unboxed_closures)]
-#![feature(ptr_metadata)]
 
-use std::{collections::HashMap};
+use std::collections::HashMap;
+mod brain;
 
 use mmap::{MapOption, MemoryMap};
 
@@ -11,13 +11,13 @@ extern "C" fn print(val: i32) {
     println!("{val}");
 }
 
-extern "C" fn bruh() -> i32{
-    println!("asd;lasd;klasd;klasd;klasd;klasd");
+extern "C" fn print_c(){
 
-    1
 }
 
-
+extern "C" fn bruh(){
+    println!("asd;lasd;klasd;klasd;klasd;klasd");
+}
 
 unsafe fn reflect(instructions: &[u8], relocs: DynRelocs, dyn_syms: &HashMap<String, usize>) {
     let map = MemoryMap::new(
@@ -92,7 +92,6 @@ impl<'a> Iterator for DynRelocs<'a>{
 }
 
 fn main() {
-
     let relocs = DynRelocs::new(include_bytes!("../xtra/out/syms"));
     let mut map = HashMap::new();
 

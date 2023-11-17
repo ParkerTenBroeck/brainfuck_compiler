@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File, io::{BufWriter, Write}};
+use std::{fs::File, io::{BufWriter, Write}};
 
 pub fn main() {
     let res = std::process::Command::new("sh")
@@ -14,8 +14,6 @@ pub fn main() {
 
     let regex = regex::Regex::new(r#"([\dabcdefABCDEF]+).*.text.dyn_fn\s*[\dabcdefABCDEF]+\s*(.*)"#).unwrap();
     let output = String::from_utf8(res.stdout).unwrap();
-    
-    // let mut map = HashMap::<String, u64>::new();
 
     let file = File::create("./xtra/out/syms").unwrap();
     let mut file = BufWriter::new(file);

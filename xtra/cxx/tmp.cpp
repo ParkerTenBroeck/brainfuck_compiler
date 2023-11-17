@@ -1,9 +1,10 @@
 
 extern "C"{
-	int print(int);
-	int lol_jpg();
-	__attribute__ ((section(".text.start")))
+		__attribute__ ((section(".text.start")))
 	void _start(int);
+	
+	int print(int);
+	void lol_jpg();
 	int factorial(int);
 }
 
