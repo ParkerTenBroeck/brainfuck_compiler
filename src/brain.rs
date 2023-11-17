@@ -229,8 +229,11 @@ impl<'a> Brain<'a> {
 use std::fmt::Write;
 
 trait Visiter {
-    fn if_start(&mut self);
-    fn if_end(&mut self);
+    fn visit_start(&mut self);
+    fn visit_end(&mut self);
+
+    fn visit_if_start(&mut self);
+    fn visit_if_end(&mut self);
 
     fn visit_increment_val(&mut self, val: usize);
     fn visit_decrement_val(&mut self, val: usize);
@@ -275,61 +278,91 @@ impl StringSudoCode {
 }
 
 impl Visiter for StringSudoCode {
-    fn if_start(&mut self) {
-        self.white_space();
+    fn visit_start(&mut self){
+        writeln!(&mut self.buffer, "jmp START_END").unwrap();
+
+        writeln!(&mut self.buffer, "PRINT_OUT:").unwrap();
+        writeln!(&mut self.buffer, "mov r11, 0123456789abcdef").unwrap();
+        writeln!(&mut self.buffer, "jmp r11").unwrap();
+
+        writeln!(&mut self.buffer, "GET_IN:").unwrap();        
+        writeln!(&mut self.buffer, "mov r11, 0123456789abcdef").unwrap();
+        writeln!(&mut self.buffer, "jmp r11").unwrap();
+
+        writeln!(&mut self.buffer, "START_END:").unwrap();
+    }
+
+    fn visit_end(&mut self){
+        writeln!(&mut self.buffer, "ret").unwrap();
+    } 
+    
+    fn visit_if_start(&mut self) {
+        // self.white_space();
         let tmp = self.next_label();
 
-        // writeln!(&mut self.buffer, "cmp byte ptr [rdi], 0").unwrap();
-        // writeln!(&mut self.buffer, "je LOOP_END_{tmp}").unwrap();
-        // writeln!(&mut self.buffer, "LOOP_START_{tmp}:").unwrap();
+        // 0x08, 0x3f, 0x00
+        writeln!(&mut self.buffer, "cmp byte [rdi], 0").unwrap();
+        writeln!(&mut self.buffer, "je LOOP_END_{tmp}").unwrap();
+        writeln!(&mut self.buffer, "LOOP_START_{tmp}:").unwrap();
+
         //cmp     byte ptr [rdi], 0
         //je      .LBB1_1
-        writeln!(&mut self.buffer, "LOOP START: L{} C{tmp}", self.level).unwrap();
+        // writeln!(&mut self.buffer, "LOOP START: L{} C{tmp}", self.level).unwrap();
         self.level += 1;
     }
 
-    fn if_end(&mut self) {
+    fn visit_if_end(&mut self) {
         self.level -= 1;
-        self.white_space();
+        // self.white_space();
         let tmp = self.pop_lable();
-        writeln!(&mut self.buffer, "LOOP END: :{} C{tmp}", self.level).unwrap();
+        // 0x08, 0x3f, 0x00
+        writeln!(&mut self.buffer, "cmp byte [rdi], 0").unwrap();
+        writeln!(&mut self.buffer, "jne LOOP_START_{tmp}").unwrap();
+        writeln!(&mut self.buffer, "LOOP_END_{tmp}:").unwrap();
+        // writeln!(&mut self.buffer, "LOOP END: :{} C{tmp}", self.level).unwrap();
     }
 
     fn visit_increment_val(&mut self, val: usize) {
-        self.white_space();
-        writeln!(&mut self.buffer, "Inc Val{val}").unwrap();
+        // self.white_space();
+        writeln!(&mut self.buffer, "add BYTE [rdi], 0x{:02x}", val as u8).unwrap();
     }
 
     fn visit_decrement_val(&mut self, val: usize) {
-        self.white_space();
-        writeln!(&mut self.buffer, "Inc Val{val}").unwrap();
+        // self.white_space();
+        writeln!(&mut self.buffer, "add BYTE [rdi], 0x{:02x}", 1+!(val as u8)).unwrap();
     }
 
     fn visit_increment_ptr(&mut self, val: usize) {
-        self.white_space();
-        writeln!(&mut self.buffer, "Inc Ptr{val}").unwrap();
+        // self.white_space();
+        writeln!(&mut self.buffer, "lea rdi,[rdi+{val}]").unwrap();
     }
 
     fn visit_decrement_ptr(&mut self, val: usize) {
-        self.white_space();
-        writeln!(&mut self.buffer, "Dec Ptr{val}").unwrap();
+        // self.white_space();
+        writeln!(&mut self.buffer, "lea rdi,[rdi-{val}]").unwrap();
     }
 
     fn visit_print(&mut self) {
-        self.white_space();
-        writeln!(&mut self.buffer, "OUTPUT").unwrap()
+        // self.white_space();
+        writeln!(&mut self.buffer, "push rdi").unwrap();
+        writeln!(&mut self.buffer, "call PRINT_OUT").unwrap();
+        writeln!(&mut self.buffer, "pop rdi").unwrap();
     }
 
     fn visit_read(&mut self) {
-        self.white_space();
-        writeln!(&mut self.buffer, "INPUT").unwrap()
+        // self.white_space();
+        writeln!(&mut self.buffer, "push rdi").unwrap();
+        writeln!(&mut self.buffer, "call GET_IN").unwrap();
+        writeln!(&mut self.buffer, "pop rdi").unwrap();
     }
 }
 
 fn codegen(code: &Vec<Terminal>, visiter: &mut impl Visiter) {
+    visiter.visit_start();
     for terminal in code {
         codegen_terminal(terminal, visiter);
     }
+    visiter.visit_end();
 }
 
 fn codegen_1(code: &Vec<Terminal>, visiter: &mut impl Visiter) {
@@ -341,9 +374,9 @@ fn codegen_1(code: &Vec<Terminal>, visiter: &mut impl Visiter) {
 fn codegen_terminal(term: &Terminal, visiter: &mut impl Visiter) {
     match term {
         Terminal::If(term) => {
-            visiter.if_start();
+            visiter.visit_if_start();
             codegen_1(term, visiter);
-            visiter.if_end();
+            visiter.visit_if_end();
         }
         Terminal::IncrementPointer(inc) => visiter.visit_increment_ptr(*inc),
         Terminal::DecrementPointer(dec) => visiter.visit_decrement_ptr(*dec),

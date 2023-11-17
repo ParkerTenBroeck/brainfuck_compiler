@@ -7,8 +7,8 @@ mod brain;
 
 use mmap::{MapOption, MemoryMap};
 
-extern "C" fn print(val: i32) {
-    println!("{val}");
+extern "C" fn print(char: &u8) {
+    print!("{}", *char as char);
 }
 
 extern "C" fn print_c() {}
@@ -33,15 +33,17 @@ unsafe fn reflect(instructions: &[u8], relocs: DynRelocs, dyn_syms: &HashMap<Str
     let slice = std::slice::from_raw_parts_mut(map.data(), instructions.len());
 
     for reloc in relocs {
+        println!("{}", reloc.0);
         let addr = *dyn_syms.get(reloc.0).unwrap();
         let offset = reloc.1 as usize;
         let address: &mut [u8; 8] = (&mut slice[offset..(offset + 8)]).try_into().unwrap();
         *address = (addr).to_le_bytes();
     }
 
-    let func: extern "C" fn(i32) = std::mem::transmute(map.data());
+    let func: extern "C" fn(*mut u8) = std::mem::transmute(map.data());
 
-    func(10);
+    let mut vals = [0u8; 100];
+    func(vals.as_mut_slice().as_mut_ptr());
 }
 
 #[derive(Clone, Copy)]
