@@ -1,24 +1,24 @@
-use super::parser::Terminal;
+use super::{ast_to_ir::Ir, parser::Ast};
 
 pub struct BrainInterpret {
-    data: [u8; 0x1000],
+    data: [u8; 100],
     position: usize,
 }
 
 impl BrainInterpret {
     pub fn new() -> Self {
         Self {
-            data: [0; 0x1000],
+            data: [0; 100],
             position: 0,
         }
     }
-    pub fn interpret(&mut self, code: &Vec<Terminal>) {
+    pub fn interpret(&mut self, code: &Vec<Ast>) {
         for term in code {
             self.run_term(term);
         }
     }
 
-    pub fn interpret_1(&mut self, code: &Vec<Terminal>) {
+    pub fn interpret_1(&mut self, code: &Vec<Ast>) {
         while self.data[self.position] != 0 {
             for term in code {
                 self.run_term(term);
@@ -26,27 +26,78 @@ impl BrainInterpret {
         }
     }
 
-    fn run_term(&mut self, term: &Terminal) {
+    fn run_term(&mut self, term: &Ast) {
         match term {
-            Terminal::If(term) => {
+            Ast::If(term) => {
                 self.interpret_1(term);
             }
-            Terminal::IncrementPointer(val) => {
+            Ast::IncrementPointer(val) => {
                 self.position += *val;
             }
-            Terminal::DecrementPointer(val) => {
+            Ast::DecrementPointer(val) => {
                 self.position -= *val;
             }
-            Terminal::IncrementValue(val) => {
+            Ast::IncrementValue(val) => {
                 self.data[self.position] += (*val) as u8;
             }
-            Terminal::DecrementValue(val) => {
+            Ast::DecrementValue(val) => {
                 self.data[self.position] -= (*val) as u8;
             }
-            Terminal::Output => {
+            Ast::Output => {
                 print!("{}", self.data[self.position] as char);
             }
-            Terminal::Input => todo!(),
+            Ast::Input => todo!(),
+        }
+    }
+}
+
+pub struct BrainInterpretIr {
+    data: [u8; 100],
+    position: usize,
+}
+
+impl BrainInterpretIr {
+    pub fn new() -> Self {
+        Self {
+            data: [0; 100],
+            position: 0,
+        }
+    }
+    pub fn interpret(&mut self, code: &Vec<Ir>) {
+        for term in code {
+            self.run_term(term);
+        }
+    }
+
+    pub fn interpret_1(&mut self, code: &Vec<Ir>) {
+        while self.data[self.position] != 0 {
+            for term in code {
+                self.run_term(term);
+            }
+        }
+    }
+
+    fn run_term(&mut self, term: &Ir) {
+        match term {
+            Ir::While(inner) => self.interpret_1(inner),
+            Ir::OffsetValue { val_off, ptr_off } => {
+                let position = (self.position as isize + ptr_off) as usize;
+                
+                self.data[position] = self.data[position].wrapping_add(*val_off);
+            }
+            Ir::OffsetPtr { ptr_off } => {
+                self.position = (self.position as isize + ptr_off) as usize
+            }
+            Ir::Print { ptr_off } => {
+                let position = (self.position as isize + ptr_off) as usize;
+                print!("{}", self.data[position] as char);
+            }
+            Ir::PrintKnown { val } => {
+                todo!()
+            }
+            Ir::Input { ptr_off } => {
+                todo!()
+            }
         }
     }
 }

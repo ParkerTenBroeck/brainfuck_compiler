@@ -1,4 +1,4 @@
-use std::{str::Chars, iter::Peekable};
+use std::{iter::Peekable, str::Chars};
 
 pub struct Brain<'a> {
     chars: Peekable<Chars<'a>>,
@@ -7,8 +7,8 @@ pub struct Brain<'a> {
 }
 
 #[derive(Debug)]
-pub enum Terminal {
-    If(Vec<Terminal>),
+pub enum Ast {
+    If(Vec<Ast>),
     IncrementPointer(usize),
     DecrementPointer(usize),
     IncrementValue(usize),
@@ -16,7 +16,6 @@ pub enum Terminal {
     Output,
     Input,
 }
-
 
 impl<'a> Brain<'a> {
     pub fn new(data: &'a str) -> Self {
@@ -27,7 +26,7 @@ impl<'a> Brain<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> Vec<Terminal> {
+    pub fn parse(&mut self) -> Vec<Ast> {
         let mut top = Vec::new();
         let mut stack = Vec::new();
 
@@ -51,18 +50,18 @@ impl<'a> Brain<'a> {
                         '>' => state = State::IncPtr,
                         '-' => state = State::DecVal,
                         '<' => state = State::DecPtr,
-                        '.' => top.push(Terminal::Output),
-                        ',' => top.push(Terminal::Input),
+                        '.' => top.push(Ast::Output),
+                        ',' => top.push(Ast::Input),
                         '[' => {
                             stack.push(top);
                             top = Vec::new();
                         }
                         ']' => {
-                            let mut tmp: Vec<Terminal> = stack.pop().unwrap();
+                            let mut tmp: Vec<Ast> = stack.pop().unwrap();
                             // if the first statement in our program is an if statement
                             // uh dont include it
                             if !(stack.is_empty() && tmp.is_empty()) {
-                                tmp.push(Terminal::If(top));
+                                tmp.push(Ast::If(top));
                             }
                             top = tmp;
                         }
@@ -76,7 +75,7 @@ impl<'a> Brain<'a> {
                 State::IncPtr => match char {
                     '>' => val += 1,
                     _ => {
-                        top.push(Terminal::IncrementPointer(val));
+                        top.push(Ast::IncrementPointer(val));
                         state = State::Default;
                         val = 0;
                         consume = false;
@@ -85,7 +84,7 @@ impl<'a> Brain<'a> {
                 State::DecPtr => match char {
                     '<' => val += 1,
                     _ => {
-                        top.push(Terminal::DecrementPointer(val));
+                        top.push(Ast::DecrementPointer(val));
                         state = State::Default;
                         val = 0;
                         consume = false;
@@ -94,7 +93,7 @@ impl<'a> Brain<'a> {
                 State::IncVal => match char {
                     '+' => val += 1,
                     _ => {
-                        top.push(Terminal::IncrementValue(val));
+                        top.push(Ast::IncrementValue(val));
                         state = State::Default;
                         val = 0;
                         consume = false;
@@ -103,7 +102,7 @@ impl<'a> Brain<'a> {
                 State::DecVal => match char {
                     '-' => val += 1,
                     _ => {
-                        top.push(Terminal::DecrementValue(val));
+                        top.push(Ast::DecrementValue(val));
                         state = State::Default;
                         val = 0;
                         consume = false;

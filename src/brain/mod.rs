@@ -1,8 +1,10 @@
+use crate::brain::interpret::BrainInterpretIr;
+
+pub mod ast_to_ir;
+pub mod codegen;
 pub mod interpret;
 pub mod parser;
-pub mod codegen;
 pub mod visitor;
-
 
 #[test]
 fn bruh() {
@@ -51,15 +53,18 @@ fn bruh() {
   >>+.                    Add 1 to Cell #5 gives us an exclamation point
   >++.                    And finally a newline from Cell #6    
 "#;
-    use crate::brain::{parser::Brain, interpret::BrainInterpret};
     use crate::brain::codegen::assembly::AsmCodeGen;
+    use crate::brain::{interpret::BrainInterpret, parser::Brain};
 
-    let bf = Brain::new(code).parse();
-    println!("{:#?}", bf);
-    BrainInterpret::new().interpret(&bf);
+    let ast = Brain::new(code).parse();
+    println!("{:#?}", ast);
+    BrainInterpret::new().interpret(&ast);
+    let ir = ast_to_ir::ast_to_ir(ast);
+    println!("{:#?}", ir);
+    BrainInterpretIr::new().interpret(&ir);
 
     let mut asm = String::new();
     let mut visiter = AsmCodeGen::new(&mut asm);
-    visitor::visit_all(&bf, &mut visiter);
+    visitor::visit_all(&ir, &mut visiter);
     println!("{}", asm);
 }
