@@ -1,19 +1,19 @@
 use std::fmt::Write;
 
-use super::visitor::Visitor;
+use crate::brain::visitor::Visitor;
 
 
-pub struct AsmCodeGen {
-    pub asm: String,
+pub struct AsmCodeGen<T: Write> {
+    asm: T,
     level: usize,
     label_next: usize,
     labels: Vec<usize>,
 }
 
-impl AsmCodeGen {
-    pub fn new() -> Self {
+impl<T: Write> AsmCodeGen<T> {
+    pub fn new(out: T) -> Self {
         Self {
-            asm: String::new(),
+            asm: out,
             level: 0,
             label_next: 0,
             labels: Vec::new(),
@@ -31,7 +31,7 @@ impl AsmCodeGen {
     }
 }
 
-impl Visitor for AsmCodeGen {
+impl<T: std::fmt::Write> Visitor for AsmCodeGen<T> {
     fn visit_start(&mut self){
         writeln!(&mut self.asm, "jmp START_END").unwrap();
 

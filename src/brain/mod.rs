@@ -52,12 +52,14 @@ fn bruh() {
   >++.                    And finally a newline from Cell #6    
 "#;
     use crate::brain::{parser::Brain, interpret::BrainInterpret};
-    use crate::brain::codegen::AsmCodeGen;
+    use crate::brain::codegen::assembly::AsmCodeGen;
 
     let bf = Brain::new(code).parse();
     println!("{:#?}", bf);
     BrainInterpret::new().interpret(&bf);
-    let mut visiter = AsmCodeGen::new();
+
+    let mut asm = String::new();
+    let mut visiter = AsmCodeGen::new(&mut asm);
     visitor::visit_all(&bf, &mut visiter);
-    println!("{}", visiter.asm);
+    println!("{}", asm);
 }
