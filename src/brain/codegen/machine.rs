@@ -25,7 +25,7 @@ impl Instruction {
             Instruction::MovR11 { .. } => 10,
             Instruction::MovRbxRdi => 3,
             Instruction::JmpR11 => 3,
-            Instruction::AddByteMemRbx { byte_off, val } => {
+            Instruction::AddByteMemRbx { byte_off, .. } => {
                 if *byte_off == 0 {
                     3
                 }else if *byte_off < -128 || *byte_off > 127 {

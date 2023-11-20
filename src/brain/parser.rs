@@ -2,8 +2,6 @@ use std::{iter::Peekable, str::Chars};
 
 pub struct Brain<'a> {
     chars: Peekable<Chars<'a>>,
-    data: &'a str,
-    tmp_count: usize,
 }
 
 #[derive(Debug)]
@@ -21,8 +19,6 @@ impl<'a> Brain<'a> {
     pub fn new(data: &'a str) -> Self {
         Self {
             chars: data.chars().peekable(),
-            data,
-            tmp_count: 0,
         }
     }
 

@@ -54,7 +54,7 @@ fn bruh() {
   >>+.                    Add 1 to Cell #5 gives us an exclamation point
   >++.                    And finally a newline from Cell #6    
 "#;
-    use crate::brain::codegen::assembly::AsmCodeGen;
+
     use crate::brain::{interpret::BrainInterpret, parser::Brain};
 
     let ast = Brain::new(code).parse();
@@ -71,9 +71,12 @@ fn bruh() {
     println!("{:02x?}", asm);
 }
 
+#[allow(dead_code)]
 extern "C" fn print(char: &u8) {
     print!("{}", *char as char);
 }
+
+#[allow(dead_code)]
 extern "C" fn read(char: &mut u8) {
     print!("{}", *char as char);
 }

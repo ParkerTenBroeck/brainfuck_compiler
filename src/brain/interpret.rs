@@ -92,10 +92,7 @@ impl BrainInterpretIr {
                 let position = (self.position as isize + ptr_off) as usize;
                 print!("{}", self.data[position] as char);
             }
-            Ir::PrintKnown { val } => {
-                todo!()
-            }
-            Ir::Input { ptr_off } => {
+            Ir::Input { .. } => {
                 todo!()
             }
         }

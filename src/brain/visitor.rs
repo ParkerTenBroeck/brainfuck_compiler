@@ -1,6 +1,4 @@
-use std::fmt::Write;
-
-use super::{ast_to_ir::Ir, parser::Ast};
+use super::ast_to_ir::Ir;
 
 pub trait Visitor {
     fn visit_start(&mut self);
@@ -39,7 +37,6 @@ fn visit_terminal(term: &Ir, visiter: &mut impl Visitor) {
         Ir::OffsetValue { val_off, ptr_off } => visiter.visit_mem_off(*val_off, *ptr_off),
         Ir::OffsetPtr { ptr_off } => visiter.visit_ptr_off(*ptr_off),
         Ir::Print { ptr_off } => visiter.visit_print(*ptr_off),
-        Ir::PrintKnown { val } => todo!(),
         Ir::Input { ptr_off } => visiter.visit_read(*ptr_off),
     }
 }

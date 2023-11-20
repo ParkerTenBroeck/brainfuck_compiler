@@ -72,9 +72,6 @@ fn main() {
     let mut instructions = Vec::new();
     let mut visiter = MachineGen::new(&mut instructions, print, read);
     brain::visitor::visit_all(&ir, &mut visiter);
-    // std::fs::write("./out.bin", &asm).unwrap();
-    // println!("{:02x?}", asm);
-
 
     use mmap::{MapOption, MemoryMap};
 
