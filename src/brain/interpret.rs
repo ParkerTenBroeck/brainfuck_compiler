@@ -82,7 +82,7 @@ impl BrainInterpretIr {
             Ir::While(inner) => self.interpret_1(inner),
             Ir::OffsetValue { val_off, ptr_off } => {
                 let position = (self.position as isize + ptr_off) as usize;
-                
+
                 self.data[position] = self.data[position].wrapping_add(*val_off);
             }
             Ir::OffsetPtr { ptr_off } => {

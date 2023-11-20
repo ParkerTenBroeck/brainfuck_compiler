@@ -33,7 +33,7 @@ impl<T: Write> AsmCodeGen<T> {
 impl<T: std::fmt::Write> Visitor for AsmCodeGen<T> {
     fn visit_start(&mut self) {
         writeln!(&mut self.asm, "mov rbx, rdi").unwrap();
-        writeln!(&mut self.asm, "jmp START_END").unwrap();
+        // writeln!(&mut self.asm, "jmp START_END").unwrap();
 
         // writeln!(&mut self.asm, "PRINT_OUT:").unwrap();
         // writeln!(&mut self.asm, "mov r11, 0x0123456789abcdef").unwrap();
@@ -43,7 +43,7 @@ impl<T: std::fmt::Write> Visitor for AsmCodeGen<T> {
         // writeln!(&mut self.asm, "mov r11, 0x0123456789abcdef").unwrap();
         // writeln!(&mut self.asm, "jmp r11").unwrap();
 
-        writeln!(&mut self.asm, "START_END:").unwrap();
+        // writeln!(&mut self.asm, "START_END:").unwrap();
     }
 
     fn visit_end(&mut self) {
@@ -121,6 +121,6 @@ impl<T: std::fmt::Write> Visitor for AsmCodeGen<T> {
         } else {
             writeln!(&mut self.asm, "lea rdi, [rbx+{ptr_off}]").unwrap();
         }
-        writeln!(&mut self.asm, "call GET_IN").unwrap();
+        writeln!(&mut self.asm, "call input").unwrap();
     }
 }

@@ -1,6 +1,46 @@
 section .text.dyn_fn progbits alloc exec nowrite
 ; section 
 
+_test:
+
+mov r11, $0123456789abcdef
+jmp r11
+mov rbx, rdi
+add BYTE [rbx], 0x08
+add BYTE [rbx+5], 0x08
+add BYTE [rbx-5], 0x08
+add BYTE [rbx-128], 0x08
+add BYTE [rbx-129], 0x08
+add BYTE [rbx+127], 0x08
+add BYTE [rbx+128], 0x08
+
+cmp byte [rbx], 0
+
+cmp byte [rbx+1], 0
+cmp byte [rbx-1], 0
+cmp byte [rbx+128], 0
+je print
+je _test
+je end
+jne print
+jne _test
+jne end
+
+lea rdi, [rbx]
+
+lea rdi, [rbx+4]
+lea rdi, [rbx+200]
+
+lea rbx, [rbx]
+
+lea rbx, [rbx+4]
+lea rbx, [rbx+200]
+
+jmp print
+jmp _test
+jmp end
+
+jmp print
 global print: function
 
 print:
@@ -23,6 +63,12 @@ _start:
 
 mov rbx, rdi
 jmp START_END
+lol_jpg_2:
+mov r11, $0123456789abcdef
+jmp r11
+lol_jpg_3:
+mov r11, $0123456789abcdef
+jmp r11
 START_END:
 add BYTE [rbx], 0x08
 cmp byte [rbx], 0
@@ -95,6 +141,7 @@ lea rdi, [rbx+6]
 call print
 lea rbx,[rbx+6]
 ret
+
 
 ; jmp START_END
 
@@ -200,3 +247,6 @@ ret
 ; call print
 ; pop rdi
 ; ret
+
+
+end:

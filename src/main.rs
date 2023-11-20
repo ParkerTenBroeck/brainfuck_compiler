@@ -2,22 +2,82 @@
 #![feature(fn_traits)]
 #![feature(unboxed_closures)]
 
-use std::collections::HashMap;
 mod brain;
+mod dyn_link;
 
-use mmap::{MapOption, MemoryMap};
+fn main() {
+    let code = r#"
+    [ This program prints "Hello World!" and a newline to the screen, its
+    length is 106 active command characters. [It is not the shortest.]
+  
+    This loop is an "initial comment loop", a simple way of adding a comment
+    to a BF program such that you don't have to worry about any command
+    characters. Any ".", ",", "+", "-", "<" and ">" characters are simply
+    ignored, the "[" and "]" characters just have to be balanced. This
+    loop and the commands it contains are ignored because the current cell
+    defaults to a value of 0; the 0 value causes this loop to be skipped.
+  ]
+  ++++++++               Set Cell #0 to 8
+  [
+      >++++               Add 4 to Cell #1; this will always set Cell #1 to 4
+      [                   as the cell will be cleared by the loop
+          >++             Add 2 to Cell #2
+          >+++            Add 3 to Cell #3
+          >+++            Add 3 to Cell #4
+          >+              Add 1 to Cell #5
+          <<<<-           Decrement the loop counter in Cell #1
+      ]                   Loop until Cell #1 is zero; number of iterations is 4
+      >+                  Add 1 to Cell #2
+      >+                  Add 1 to Cell #3
+      >-                  Subtract 1 from Cell #4
+      >>+                 Add 1 to Cell #6
+      [<]                 Move back to the first zero cell you find; this will
+                          be Cell #1 which was cleared by the previous loop
+      <-                  Decrement the loop Counter in Cell #0
+  ]                       Loop until Cell #0 is zero; number of iterations is 8
+  
+  The result of this is:
+  Cell no :   0   1   2   3   4   5   6
+  Contents:   0   0  72 104  88  32   8
+  Pointer :   ^
+  
+  >>.                     Cell #2 has value 72 which is 'H'
+  >---.                   Subtract 3 from Cell #3 to get 101 which is 'e'
+  +++++++..+++.           Likewise for 'llo' from Cell #3
+  >>.                     Cell #5 is 32 for the space
+  <-.                     Subtract 1 from Cell #4 for 87 to give a 'W'
+  <.                      Cell #3 was set to 'o' from the end of 'Hello'
+  +++.------.--------.    Cell #3 for 'rl' and 'd'
+  >>+.                    Add 1 to Cell #5 gives us an exclamation point
+  >++.                    And finally a newline from Cell #6    
+"#;
+    use crate::brain::{interpret::BrainInterpret, parser::Brain};
+    use crate::brain::{interpret::BrainInterpretIr, codegen::machine::MachineGen};
 
-extern "C" fn print(char: &u8) {
-    print!("{}", *char as char);
-}
 
-extern "C" fn print_c() {}
+    let ast = Brain::new(code).parse();
+    println!("{:#?}", ast);
+    BrainInterpret::new().interpret(&ast);
+    let ir = brain::ast_to_ir::ast_to_ir(ast);
+    println!("{:#?}", ir);
+    BrainInterpretIr::new().interpret(&ir);
 
-extern "C" fn bruh() {
-    println!("asd;lasd;klasd;klasd;klasd;klasd");
-}
+    extern "C" fn print(char: &u8) {
+        print!("{}", *char as char);
+    }
+    extern "C" fn read(char: &mut u8) {
+        *char = 0;
+    }
 
-unsafe fn reflect(instructions: &[u8], relocs: DynRelocs, dyn_syms: &HashMap<String, usize>) {
+    let mut instructions = Vec::new();
+    let mut visiter = MachineGen::new(&mut instructions, print, read);
+    brain::visitor::visit_all(&ir, &mut visiter);
+    // std::fs::write("./out.bin", &asm).unwrap();
+    // println!("{:02x?}", asm);
+
+
+    use mmap::{MapOption, MemoryMap};
+
     let map = MemoryMap::new(
         instructions.len(),
         &[
@@ -28,74 +88,11 @@ unsafe fn reflect(instructions: &[u8], relocs: DynRelocs, dyn_syms: &HashMap<Str
     )
     .unwrap();
 
-    std::ptr::copy(instructions.as_ptr(), map.data(), instructions.len());
+    unsafe{
+        std::ptr::copy(instructions.as_ptr(), map.data(), instructions.len());
+        let func: extern "C" fn(*mut u8) = std::mem::transmute(map.data());
 
-    let slice = std::slice::from_raw_parts_mut(map.data(), instructions.len());
-
-    for reloc in relocs {
-        println!("{}", reloc.0);
-        let addr = *dyn_syms.get(reloc.0).unwrap();
-        let offset = reloc.1 as usize;
-        let address: &mut [u8; 8] = (&mut slice[offset..(offset + 8)]).try_into().unwrap();
-        *address = (addr).to_le_bytes();
+        let mut vals = [0u8; 100];
+        func(vals.as_mut_slice().as_mut_ptr());
     }
-
-    let func: extern "C" fn(*mut u8) = std::mem::transmute(map.data());
-
-    let mut vals = [0u8; 100];
-    func(vals.as_mut_slice().as_mut_ptr());
-}
-
-#[derive(Clone, Copy)]
-struct DynRelocs<'a> {
-    data: &'a [u8],
-    index: usize,
-}
-
-impl<'a> DynRelocs<'a> {
-    pub fn new(data: &'a [u8]) -> Self {
-        Self { data, index: 0 }
-    }
-}
-
-impl<'a> Iterator for DynRelocs<'a> {
-    type Item = (&'a str, u64);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.data.len() < self.index + 8 {
-            self.index = self.data.len();
-            return None;
-        }
-        let pos: [u8; 8] = (&self.data[self.index..(self.index + 8)]).try_into().ok()?;
-        let pos = u64::from_be_bytes(pos);
-        self.index += 8;
-
-        if self.data.len() < self.index + 2 {
-            self.index = self.data.len();
-            return None;
-        }
-        let size: [u8; 2] = (&self.data[self.index..(self.index + 2)]).try_into().ok()?;
-        let size = u16::from_be_bytes(size) as usize;
-        self.index += 2;
-
-        if self.data.len() < self.index + size {
-            self.index = self.data.len();
-            return None;
-        }
-        let sym = &self.data[self.index..(self.index + size)];
-        let sym = std::str::from_utf8(sym).ok()?;
-        self.index += size;
-
-        Some((sym, pos))
-    }
-}
-
-fn main() {
-    let relocs = DynRelocs::new(include_bytes!("../xtra/out/syms"));
-    let mut map = HashMap::new();
-
-    map.insert("print".into(), (print as *const ()) as usize);
-    map.insert("lol_jpg".into(), (bruh as *const ()) as usize);
-
-    unsafe { reflect(include_bytes!("../xtra/out/raw.bin"), relocs, &map) }
 }

@@ -1,4 +1,3 @@
-use crate::brain::interpret::BrainInterpretIr;
 
 pub mod ast_to_ir;
 pub mod codegen;
@@ -8,6 +7,8 @@ pub mod visitor;
 
 #[test]
 fn bruh() {
+    use crate::brain::{interpret::BrainInterpretIr, codegen::machine::MachineGen};
+
     let code = r#"
     [ This program prints "Hello World!" and a newline to the screen, its
     length is 106 active command characters. [It is not the shortest.]
@@ -63,8 +64,16 @@ fn bruh() {
     println!("{:#?}", ir);
     BrainInterpretIr::new().interpret(&ir);
 
-    let mut asm = String::new();
-    let mut visiter = AsmCodeGen::new(&mut asm);
+    let mut asm = Vec::new();
+    let mut visiter = MachineGen::new(&mut asm, print, read);
     visitor::visit_all(&ir, &mut visiter);
-    println!("{}", asm);
+    std::fs::write("./out.bin", &asm).unwrap();
+    println!("{:02x?}", asm);
+}
+
+extern "C" fn print(char: &u8) {
+    print!("{}", *char as char);
+}
+extern "C" fn read(char: &mut u8) {
+    print!("{}", *char as char);
 }
