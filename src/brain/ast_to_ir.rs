@@ -11,6 +11,23 @@ pub enum Ir {
     Input { ptr_off: isize },
 }
 
+struct Block{
+    inside: Vec<Ir2>,
+    known_ptr_off: Option<usize>,
+}
+
+struct Simple{
+
+}
+
+pub enum Ir2{
+    While(Block),
+    DoWhile(Block),
+    WhileTrue(Block),
+    If(Block),
+    Simple(Simple)
+}
+
 pub fn ast_to_ir(ast: Vec<Ast>) -> Vec<Ir> {
     let mut vec = Vec::new();
 

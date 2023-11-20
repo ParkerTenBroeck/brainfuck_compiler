@@ -3,6 +3,7 @@ section .text.dyn_fn progbits alloc exec nowrite
 
 _test:
 
+
 mov r11, $0123456789abcdef
 jmp r11
 mov rbx, rdi
@@ -60,7 +61,10 @@ global _start: function
 
 _start:
 
+push rbx
+pop rbx
 
+push rbx
 mov rbx, rdi
 jmp START_END
 lol_jpg_2:

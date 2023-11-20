@@ -16,6 +16,8 @@ enum Instruction {
     CmpByteMemZero { byte_off: isize },
     Ret,
     Jmp { byte_off: isize },
+    PopRbx,
+    PushRbx,
 }
 
 impl Instruction {
@@ -28,51 +30,51 @@ impl Instruction {
             Instruction::AddByteMemRbx { byte_off, .. } => {
                 if *byte_off == 0 {
                     3
-                }else if *byte_off < -128 || *byte_off > 127 {
-                    7
-                } else {
+                }else if (-128..128).contains(byte_off) {
                     4
+                } else {
+                    7
                 }
             }
             Instruction::LeaRbxRbx { byte_off } => {
                 if *byte_off == 0 {
                     3
-                }else if *byte_off < -128 || *byte_off > 127 {
-                    7
-                } else {
+                }else if (-128..128).contains(byte_off) {
                     4
+                } else {
+                    7
                 }
             }
             Instruction::LeaRdiRbx { byte_off } => {
                 if *byte_off == 0 {
                     3
-                }else if *byte_off < -128 || *byte_off > 127 {
-                    7
-                } else {
+                }else if (-128..128).contains(byte_off) {
                     4
+                } else {
+                    7
                 }
             }
             Instruction::Je{ byte_off } => {
-                if *byte_off < -128 || *byte_off > 127 {
-                    6
-                } else {
+                if (-128..128).contains(byte_off) {
                     2
+                } else {
+                    6
                 }
             }
             Instruction::Jne{ byte_off } => {
-                if *byte_off < -128 || *byte_off > 127 {
-                    6
-                } else {
+                if (-128..128).contains(byte_off) {
                     2
+                } else {
+                    6
                 }
             }
             Instruction::CmpByteMemZero { byte_off } => {
-                if *byte_off < -128 || *byte_off > 127 {
-                    7
-                } else if *byte_off == 0 {
+                if *byte_off == 0{
                     3
-                }else{
+                }else if (-128..128).contains(byte_off){
                     4
+                }else{
+                    7
                 }
             }
             Instruction::Ret => 1,
@@ -81,6 +83,8 @@ impl Instruction {
             }else{
                 5
             },
+            Instruction::PopRbx => 1,
+            Instruction::PushRbx => 1,
         }
     }
 
@@ -165,20 +169,22 @@ impl Instruction {
                 out.write_all(&[0xe9])?;
                 out.write_all(&(*byte_off as i32).to_le_bytes())
             },
+            Instruction::PopRbx => out.write_all(&[0x5b]),
+            Instruction::PushRbx => out.write_all(&[0x53]),
         }
     }
 
     fn reloc(&mut self, start_inst: usize, to: usize) {
         match self{
-            Self::Je { byte_off } => {
+            Self::Jmp { byte_off } => {
                 *byte_off = to as isize - (start_inst as isize + 2);
-                if !(-128..128).contains(byte_off){
+                if !(-128..128).contains(byte_off) {
                     *byte_off -= 3;
                 }
             }
-            Self::Jmp { byte_off } | Self::Jne { byte_off } => {
+            Self::Je { byte_off } | Self::Jne { byte_off } => {
                 *byte_off = to as isize - (start_inst as isize + 2);
-                if !(-128..128).contains(byte_off){
+                if !(-128..128).contains(byte_off) {
                     *byte_off -= 4;
                 }
             }
@@ -271,6 +277,7 @@ impl<T: Write> MachineGen<T> {
 
 impl<T: Write> Visitor for MachineGen<T> {
     fn visit_start(&mut self) {
+        self.push_instrucion(Instruction::PushRbx);
         self.push_instrucion(Instruction::MovRbxRdi);
 
         // known offset from known instruction
@@ -286,10 +293,12 @@ impl<T: Write> Visitor for MachineGen<T> {
     }
 
     fn visit_end(&mut self) {
+        self.push_instrucion(Instruction::PopRbx);
         self.instruction.push(Instruction::Ret);
 
-        let mut changed = false;
         loop{
+            let mut changed = false;
+            
             let mut current_byte = 0;
             for (index, inst) in self.instruction.iter_mut().enumerate(){
                 if let Some(index) = self.symbols_ins.get(&InstructionIndex(index)){

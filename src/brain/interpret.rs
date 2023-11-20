@@ -1,14 +1,26 @@
 use super::{ast_to_ir::Ir, parser::Ast};
 
+
+fn read() -> u8{
+    let bruh = std::io::Read::bytes(std::io::stdin()) 
+            .next()
+            .and_then(|result| result.ok());
+    if let Some(some) = bruh{
+        some as u8
+    }else{
+        0
+    }
+}
+
 pub struct BrainInterpret {
-    data: [u8; 100],
+    data: [u8; 0x1000],
     position: usize,
 }
 
 impl BrainInterpret {
     pub fn new() -> Self {
         Self {
-            data: [0; 100],
+            data: [0; 0x1000],
             position: 0,
         }
     }
@@ -38,28 +50,28 @@ impl BrainInterpret {
                 self.position -= *val;
             }
             Ast::IncrementValue(val) => {
-                self.data[self.position] += (*val) as u8;
+                self.data[self.position] = self.data[self.position].wrapping_add((*val) as u8);
             }
             Ast::DecrementValue(val) => {
-                self.data[self.position] -= (*val) as u8;
+                self.data[self.position] = self.data[self.position].wrapping_sub((*val) as u8);
             }
             Ast::Output => {
                 print!("{}", self.data[self.position] as char);
             }
-            Ast::Input => todo!(),
+            Ast::Input => self.data[self.position] = read(),
         }
     }
 }
 
 pub struct BrainInterpretIr {
-    data: [u8; 100],
+    data: [u8; 0x1000],
     position: usize,
 }
 
 impl BrainInterpretIr {
     pub fn new() -> Self {
         Self {
-            data: [0; 100],
+            data: [0; 0x1000],
             position: 0,
         }
     }
@@ -92,8 +104,9 @@ impl BrainInterpretIr {
                 let position = (self.position as isize + ptr_off) as usize;
                 print!("{}", self.data[position] as char);
             }
-            Ir::Input { .. } => {
-                todo!()
+            Ir::Input { ptr_off } => {
+                let position = (self.position as isize + ptr_off) as usize;
+                self.data[position] = read();
             }
         }
     }
