@@ -1,7 +1,3 @@
-#![feature(tuple_trait)]
-#![feature(fn_traits)]
-#![feature(unboxed_closures)]
-
 use std::io::Write;
 
 use crate::brain::codegen;

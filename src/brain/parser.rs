@@ -4,9 +4,11 @@ pub struct Brain<'a> {
     chars: Peekable<Chars<'a>>,
 }
 
+type Ast = Vec<AstNode>;
+
 #[derive(Debug)]
-pub enum Ast {
-    If(Vec<Ast>),
+pub enum AstNode {
+    While(Ast),
     IncrementPointer(usize),
     DecrementPointer(usize),
     IncrementValue(usize),
@@ -22,8 +24,8 @@ impl<'a> Brain<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> Vec<Ast> {
-        let mut top = Vec::new();
+    pub fn parse(&mut self) -> Vec<AstNode> {
+        let mut top = Ast::new();
         let mut stack = Vec::new();
 
         enum State {
@@ -46,18 +48,18 @@ impl<'a> Brain<'a> {
                         '>' => state = State::IncPtr,
                         '-' => state = State::DecVal,
                         '<' => state = State::DecPtr,
-                        '.' => top.push(Ast::Output),
-                        ',' => top.push(Ast::Input),
+                        '.' => top.push(AstNode::Output),
+                        ',' => top.push(AstNode::Input),
                         '[' => {
                             stack.push(top);
                             top = Vec::new();
                         }
                         ']' => {
-                            let mut tmp: Vec<Ast> = stack.pop().unwrap();
+                            let mut tmp: Vec<AstNode> = stack.pop().unwrap();
                             // if the first statement in our program is an if statement
                             // uh dont include it
                             if !(stack.is_empty() && tmp.is_empty()) {
-                                tmp.push(Ast::If(top));
+                                tmp.push(AstNode::While(top));
                             }
                             top = tmp;
                         }
@@ -71,7 +73,7 @@ impl<'a> Brain<'a> {
                 State::IncPtr => match char {
                     '>' => val += 1,
                     _ => {
-                        top.push(Ast::IncrementPointer(val));
+                        top.push(AstNode::IncrementPointer(val));
                         state = State::Default;
                         val = 0;
                         consume = false;
@@ -80,7 +82,7 @@ impl<'a> Brain<'a> {
                 State::DecPtr => match char {
                     '<' => val += 1,
                     _ => {
-                        top.push(Ast::DecrementPointer(val));
+                        top.push(AstNode::DecrementPointer(val));
                         state = State::Default;
                         val = 0;
                         consume = false;
@@ -89,7 +91,7 @@ impl<'a> Brain<'a> {
                 State::IncVal => match char {
                     '+' => val += 1,
                     _ => {
-                        top.push(Ast::IncrementValue(val));
+                        top.push(AstNode::IncrementValue(val));
                         state = State::Default;
                         val = 0;
                         consume = false;
@@ -98,7 +100,7 @@ impl<'a> Brain<'a> {
                 State::DecVal => match char {
                     '-' => val += 1,
                     _ => {
-                        top.push(Ast::DecrementValue(val));
+                        top.push(AstNode::DecrementValue(val));
                         state = State::Default;
                         val = 0;
                         consume = false;

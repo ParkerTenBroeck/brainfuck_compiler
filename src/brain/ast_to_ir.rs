@@ -1,4 +1,4 @@
-use super::parser::Ast;
+use super::parser::AstNode;
 
 #[derive(Debug, Clone)]
 pub enum Ir {
@@ -28,32 +28,32 @@ pub enum Ir2{
     Simple(Simple)
 }
 
-pub fn ast_to_ir(ast: Vec<Ast>) -> Vec<Ir> {
+pub fn ast_to_ir(ast: Vec<AstNode>) -> Vec<Ir> {
     let mut vec = Vec::new();
 
     let mut offset = 0isize;
 
     for term in ast {
         match term {
-            Ast::If(ast) => {
+            AstNode::While(ast) => {
                 if offset != 0 {
                     vec.push(Ir::OffsetPtr { ptr_off: offset });
                 }
                 vec.push(Ir::While(ast_to_ir(ast)));
                 offset = 0;
             }
-            Ast::IncrementPointer(off) => offset += off as isize,
-            Ast::DecrementPointer(off) => offset -= off as isize,
-            Ast::IncrementValue(val) => vec.push(Ir::OffsetValue {
+            AstNode::IncrementPointer(off) => offset += off as isize,
+            AstNode::DecrementPointer(off) => offset -= off as isize,
+            AstNode::IncrementValue(val) => vec.push(Ir::OffsetValue {
                 val_off: val as u8,
                 ptr_off: offset,
             }),
-            Ast::DecrementValue(val) => vec.push(Ir::OffsetValue {
+            AstNode::DecrementValue(val) => vec.push(Ir::OffsetValue {
                 val_off: 1 + !(val as u8),
                 ptr_off: offset,
             }),
-            Ast::Output => vec.push(Ir::Print { ptr_off: offset }),
-            Ast::Input => vec.push(Ir::Input { ptr_off: offset }),
+            AstNode::Output => vec.push(Ir::Print { ptr_off: offset }),
+            AstNode::Input => vec.push(Ir::Input { ptr_off: offset }),
         }
     }
     if offset != 0 {

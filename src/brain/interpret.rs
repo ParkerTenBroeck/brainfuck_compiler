@@ -1,4 +1,4 @@
-use super::{ast_to_ir::Ir, parser::Ast};
+use super::{ast_to_ir::Ir, parser::AstNode};
 
 
 fn read() -> u8{
@@ -24,13 +24,13 @@ impl BrainInterpret {
             position: 0,
         }
     }
-    pub fn interpret(&mut self, code: &Vec<Ast>) {
+    pub fn interpret(&mut self, code: &Vec<AstNode>) {
         for term in code {
             self.run_term(term);
         }
     }
 
-    pub fn interpret_1(&mut self, code: &Vec<Ast>) {
+    pub fn interpret_1(&mut self, code: &Vec<AstNode>) {
         while self.data[self.position] != 0 {
             for term in code {
                 self.run_term(term);
@@ -38,27 +38,27 @@ impl BrainInterpret {
         }
     }
 
-    fn run_term(&mut self, term: &Ast) {
+    fn run_term(&mut self, term: &AstNode) {
         match term {
-            Ast::If(term) => {
+            AstNode::While(term) => {
                 self.interpret_1(term);
             }
-            Ast::IncrementPointer(val) => {
+            AstNode::IncrementPointer(val) => {
                 self.position += *val;
             }
-            Ast::DecrementPointer(val) => {
+            AstNode::DecrementPointer(val) => {
                 self.position -= *val;
             }
-            Ast::IncrementValue(val) => {
+            AstNode::IncrementValue(val) => {
                 self.data[self.position] = self.data[self.position].wrapping_add((*val) as u8);
             }
-            Ast::DecrementValue(val) => {
+            AstNode::DecrementValue(val) => {
                 self.data[self.position] = self.data[self.position].wrapping_sub((*val) as u8);
             }
-            Ast::Output => {
+            AstNode::Output => {
                 print!("{}", self.data[self.position] as char);
             }
-            Ast::Input => self.data[self.position] = read(),
+            AstNode::Input => self.data[self.position] = read(),
         }
     }
 }
