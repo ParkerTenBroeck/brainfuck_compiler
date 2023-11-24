@@ -8,7 +8,6 @@ struct TimerScope{
     name: String,
     childern: Vec<TimerScope>,
     duration: std::time::Duration
-    // vec
 }
 
 impl TimerScope{
@@ -77,42 +76,6 @@ impl std::string::ToString for TimerScope{
 
 fn main() {
 
-    // let timer = TimerScope::start("BrainFuck", |scope|{
-    //     std::thread::sleep(std::time::Duration::from_millis(10));
-    //     scope.named("Compiler", |scope|{
-    //         scope.named("Compile Stage 1", |_|{
-    //             std::thread::sleep(std::time::Duration::from_millis(5));
-    //         });
-    //         scope.named("Compile Stage 2", |_|{
-    //             std::thread::sleep(std::time::Duration::from_millis(7));
-    //         });
-
-    //         scope.named("Compile Stage 3", |_|{
-    //             std::thread::sleep(std::time::Duration::from_millis(11));
-    //         });
-    //     });
-
-    //     scope.named("Bruh!!!", |_|{
-    //         std::thread::sleep(std::time::Duration::from_millis(55));
-    //     });
-
-    //     scope.named("Runtime", |scope|{
-    //         scope.named("Loading", |_|{
-    //             std::thread::sleep(std::time::Duration::from_millis(1));
-            
-    //         });
-    //         scope.named("Running", |_|{
-    //             std::thread::sleep(std::time::Duration::from_millis(500));
-    //         });
-    //     });
-
-    // });
-
-    // println!("{}", timer.to_string());
-    // if true{
-    //     return;
-    // }
-
     use crate::brain::parser::Brain;
     use crate::brain::codegen::machine::MachineGen;
 
@@ -128,7 +91,7 @@ fn main() {
         *char = bruh;
     }
 
-    let timer = TimerScope::start("BrainFucl", |scope|{
+    let timer = TimerScope::start("BrainFuck", |scope|{
         let (ast, ir, asm, machine) = scope.named("Compiler", |scope|{
             let ast = scope.named("Ast Gen", |_|{
                 Brain::new(bf_programs::MANDELBROT_CALC).parse()
@@ -196,53 +159,4 @@ fn main() {
     });
 
     println!("{}", timer.to_string());
-
-    // let ast = Brain::new(bf_programs::MANDELBROT_CALC).parse();
-    
-    // // let elapsed = start.elapsed();
-    // let ir = brain::ast_to_ir::ast_to_ir(&ast);
-    // // println!("{:#?}", ast);
-    // // println!();
-    // // BrainInterpret::new().interpret(&ast);
-    // // return;
-    // // println!("{:#?}", ir);
-    // // BrainInterpretIr::new().interpret(&ir);
-    // // return;
-    // // println!();
-
-
-
-    // let mut instructions = String::new();
-    // let mut visiter = codegen::assembly::AsmCodeGen::new(&mut instructions);
-    // brain::visitor::visit_all(&ir, &mut visiter);
-    // // println!("{}", instructions);
-    // std::fs::write("./out.asm", &instructions).unwrap();
-
-    // let mut instructions = Vec::new();
-    // let mut visiter = MachineGen::new(&mut instructions, print, read);
-    // brain::visitor::visit_all(&ir, &mut visiter);
-
-    // std::fs::write("./out.bin", &instructions).unwrap();
-
-    // use mmap::{MapOption, MemoryMap};
-
-    // let map = MemoryMap::new(
-    //     instructions.len(),
-    //     &[
-    //         MapOption::MapReadable,
-    //         MapOption::MapWritable,
-    //         MapOption::MapExecutable,
-    //     ],
-    // )
-    // .unwrap();
-
-    // unsafe{
-    //     std::ptr::copy(instructions.as_ptr(), map.data(), instructions.len());
-        // let func: extern "C" fn(*mut u8) = std::mem::transmute(map.data());
-
-        // let mut vals = [0u8; 0x1000];
-        // func(vals.as_mut_slice().as_mut_ptr());
-    // }
-
-    // println!();
 }
