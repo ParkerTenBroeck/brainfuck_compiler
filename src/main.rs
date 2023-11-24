@@ -2,7 +2,6 @@ use crate::brain::{codegen, interpret};
 
 
 mod brain;
-mod dyn_link;
 mod bf_programs;
 
 struct TimerScope{
