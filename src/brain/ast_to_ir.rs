@@ -11,24 +11,8 @@ pub enum Ir {
     Input { ptr_off: isize },
 }
 
-struct Block{
-    inside: Vec<Ir2>,
-    known_ptr_off: Option<usize>,
-}
 
-struct Simple{
-
-}
-
-pub enum Ir2{
-    While(Block),
-    DoWhile(Block),
-    WhileTrue(Block),
-    If(Block),
-    Simple(Simple)
-}
-
-pub fn ast_to_ir(ast: Vec<AstNode>) -> Vec<Ir> {
+pub fn ast_to_ir(ast: &Vec<AstNode>) -> Vec<Ir> {
     let mut vec = Vec::new();
 
     let mut offset = 0isize;
@@ -42,14 +26,14 @@ pub fn ast_to_ir(ast: Vec<AstNode>) -> Vec<Ir> {
                 vec.push(Ir::While(ast_to_ir(ast)));
                 offset = 0;
             }
-            AstNode::IncrementPointer(off) => offset += off as isize,
-            AstNode::DecrementPointer(off) => offset -= off as isize,
+            AstNode::IncrementPointer(off) => offset += *off as isize,
+            AstNode::DecrementPointer(off) => offset -= *off as isize,
             AstNode::IncrementValue(val) => vec.push(Ir::OffsetValue {
-                val_off: val as u8,
+                val_off: *val as u8,
                 ptr_off: offset,
             }),
             AstNode::DecrementValue(val) => vec.push(Ir::OffsetValue {
-                val_off: 1 + !(val as u8),
+                val_off: 1 + !(*val as u8),
                 ptr_off: offset,
             }),
             AstNode::Output => vec.push(Ir::Print { ptr_off: offset }),

@@ -4,6 +4,7 @@ pub mod codegen;
 pub mod interpret;
 pub mod parser;
 pub mod visitor;
+pub mod stage3;
 
 #[test]
 fn bruh() {
