@@ -156,6 +156,8 @@ fn main() {
 
             (ast, ir, asm, machine)
         });
+        // unused but timings are important :)
+        _ = asm;
 
         let mmap = scope.named("Machine Setup", |_|{
             use mmap::{MapOption, MemoryMap};
@@ -184,12 +186,12 @@ fn main() {
                 func(vals.as_mut_slice().as_mut_ptr());
             });
 
-            // scope.named("Ast Interpret", |_|{
-            //     interpret::BrainInterpret::new().interpret(&ast);
-            // });
-            // scope.named("Ir Interpret", |_|{
-            //     interpret::BrainInterpretIr::new().interpret(&ir);
-            // });
+            scope.named("Ast Interpret", |_|{
+                interpret::BrainInterpret::new().interpret(&ast);
+            });
+            scope.named("Ir Interpret", |_|{
+                interpret::BrainInterpretIr::new().interpret(&ir);
+            });
         });
 
     });
