@@ -432,7 +432,7 @@ fn write_elf(file: &mut std::fs::File, instructions: &[u8]) -> std::io::Result<(
             name_off: (table::TEXT as u32).into(),
             s_type: 1.into(),   // SHT_PROGBITS
             flags: 0.into(),
-            virtual_address: 0x401000.into(),
+            virtual_address: PROGRAM_START.into(),
             file_off: (after_str_tab as u64).into(),
             file_size: (instructions.len() as u64).into(),
             link: 0.into(),
