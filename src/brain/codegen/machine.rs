@@ -2,6 +2,7 @@ use std::{collections::HashMap, io::Write};
 
 use crate::brain::visitor::Visitor;
 
+#[allow(unused)]
 enum Instruction {
     Call { byte_off: isize },
     MovR11 { abs_addr: usize },
@@ -28,6 +29,7 @@ enum Instruction {
     AddImmRsp(i32),
     LeaRsiRbx { byte_off: isize },
     MovRbxRsp,
+    Hlt,
 }
 
 impl Instruction {
@@ -122,6 +124,7 @@ impl Instruction {
                 }
             }
             Instruction::MovRbxRsp => 3,
+            Instruction::Hlt => 1,
         }
     }
 
@@ -253,6 +256,7 @@ impl Instruction {
                 }
             }
             Instruction::MovRbxRsp => out.write_all(&[0x48, 0x89, 0xe3]),
+            Instruction::Hlt => out.write_all(&[0xf4]),
         }
     }
 
@@ -454,7 +458,11 @@ impl<T: Write> Visitor for MachineGen<T> {
                 self.push_instrucion(Instruction::PopRbx);
                 self.instruction.push(Instruction::Ret);
             }
-            EndKind::Kill => {}
+            EndKind::Kill => {
+                self.instruction.push(Instruction::MoveImmRdi(0));
+                self.instruction.push(Instruction::MoveImmRax(60));
+                self.instruction.push(Instruction::Syscall);
+            }
         }
 
         loop {
