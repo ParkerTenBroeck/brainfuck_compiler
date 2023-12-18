@@ -42,17 +42,11 @@ impl BrainInterpret {
             AstNode::While(term) => {
                 self.interpret_1(term);
             }
-            AstNode::IncrementPointer(val) => {
-                self.position += *val;
+            AstNode::OffPtr(val) => {
+                self.position = self.position.wrapping_add_signed(*val as isize);
             }
-            AstNode::DecrementPointer(val) => {
-                self.position -= *val;
-            }
-            AstNode::IncrementValue(val) => {
-                self.data[self.position] = self.data[self.position].wrapping_add((*val) as u8);
-            }
-            AstNode::DecrementValue(val) => {
-                self.data[self.position] = self.data[self.position].wrapping_sub((*val) as u8);
+            AstNode::ChangeValue(val) => {
+                self.data[self.position] = self.data[self.position].wrapping_add(*val);
             }
             AstNode::Output => {
                 print!("{}", self.data[self.position] as char);
@@ -64,7 +58,7 @@ impl BrainInterpret {
 
 pub struct BrainInterpretIr {
     data: [u8; 0x1000],
-    position: usize,
+    position: i64,
 }
 
 impl BrainInterpretIr {
@@ -80,8 +74,8 @@ impl BrainInterpretIr {
         }
     }
 
-    pub fn interpret_1(&mut self, offset: isize, code: &Vec<Ir>) {
-        while self.data[self.position.wrapping_add_signed(offset)] != 0 {
+    pub fn interpret_1(&mut self, offset: i64, code: &Vec<Ir>) {
+        while self.data[(self.position + offset) as usize] != 0 {
             for term in code {
                 self.run_term(term);
             }
@@ -92,19 +86,22 @@ impl BrainInterpretIr {
         match term {
             Ir::While{ inside, ptr_off } => self.interpret_1(*ptr_off, inside),
             Ir::OffsetValue { val_off, ptr_off } => {
-                let position = (self.position as isize + ptr_off) as usize;
-
+                let position = (self.position + ptr_off) as usize;
                 self.data[position] = self.data[position].wrapping_add(*val_off);
             }
+            Ir::Set { ptr_off, val } => {
+                let position = (self.position + ptr_off) as usize;
+                self.data[position] = *val;
+            },
             Ir::OffsetPtr { ptr_off } => {
-                self.position = (self.position as isize + ptr_off) as usize
+                self.position = self.position + ptr_off;
             }
             Ir::Print { ptr_off } => {
-                let position = (self.position as isize + ptr_off) as usize;
+                let position = (self.position + ptr_off) as usize;
                 print!("{}", self.data[position] as char);
             }
             Ir::Input { ptr_off } => {
-                let position = (self.position as isize + ptr_off) as usize;
+                let position = (self.position + ptr_off) as usize;
                 self.data[position] = read();
             }
         }

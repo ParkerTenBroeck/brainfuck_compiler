@@ -1,4 +1,5 @@
-use std::{io::Write, path::PathBuf, str::FromStr};
+
+use std::{io::{Write, BufWriter}, path::PathBuf, str::FromStr};
 
 use crate::brain::{codegen, interpret};
 
@@ -240,8 +241,6 @@ fn main() -> std::io::Result<()> {
         )
         .unwrap();
 
-        println!("{:?}", map.data());
-
         unsafe {
             std::ptr::copy(instructions.as_ptr(), map.data(), instructions.len());
         }
@@ -253,11 +252,11 @@ fn main() -> std::io::Result<()> {
 
     match args.output_fmt {
         OutputKind::Elf => {
-            let mut file = std::fs::File::create(
+            let file = std::fs::File::create(
                 args.output
                     .unwrap_or_else(|| PathBuf::from_str("out.elf").unwrap()),
             )?;
-            write_elf(&mut file, &instructions)?;
+            write_elf(&mut BufWriter::new(file), &instructions)?;
         }
         OutputKind::Binary => {
             let mut file = std::fs::File::create(
@@ -272,6 +271,16 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
+
+
+trait ReprBytes: Sized{
+    fn repr_bytes<'a>(&'a self) -> &'a [u8]{
+        unsafe{
+            std::slice::from_raw_parts(self as *const Self as *const u8, std::mem::size_of::<Self>())
+        }
+    }
+}
+
 macro_rules! impl_ints {
     ($type:ty, $int:ty) => {
         impl std::convert::From<$int> for $type {
@@ -282,6 +291,12 @@ macro_rules! impl_ints {
         impl std::convert::From<$type> for $int {
             fn from(value: $type) -> Self {
                 Self::from_le_bytes(value.0)
+            }
+        }
+
+        impl ReprBytes for $type{
+            fn repr_bytes(&self) -> &[u8]{
+                &self.0
             }
         }
     };
@@ -339,7 +354,10 @@ struct Header {
     index_section_header_names: U16LE,
 }
 
+impl ReprBytes for Header{}
+
 #[repr(C, packed)]
+#[derive(Default)]
 struct ProgramHeader {
     p_type: U32LE,
     flags: U32LE,
@@ -350,6 +368,7 @@ struct ProgramHeader {
     mem_size: USizeLE,
     align: USizeLE,
 }
+impl ReprBytes for ProgramHeader{}
 
 #[repr(C, packed)]
 #[derive(Default)]
@@ -366,9 +385,25 @@ struct SectionHeader {
     ent_size: USizeLE,
 }
 
+impl ReprBytes for SectionHeader{}
+
+#[repr(C, packed)]
+#[derive(Default)]
+struct SymbolTableEntry{
+    name: U32LE,
+    info: U8LE,
+    other: U8LE,
+    section_index: U16LE,
+    addr: USizeLE,
+    sym_size: USizeLE
+}
+
+impl ReprBytes for SymbolTableEntry{}
+
 fn write_elf(file: &mut impl std::io::Write, instructions: &[u8]) -> std::io::Result<()> {
     const PROGRAM_HEADERS: usize = 1;
-    const SECTION_HEADERS: usize = 3;
+    const SECTION_HEADERS: usize = 4;
+    const SYMBOLS: usize = 2;
     const PROGRAM_ALIGN: u64 = 0x1000;
     const PROGRAM_START: u64 = 0x401000;
 
@@ -391,23 +426,28 @@ fn write_elf(file: &mut impl std::io::Write, instructions: &[u8]) -> std::io::Re
         };
     }
 
-    construct_str_table!(mod table{TABLE, _EMPTY:"",TEXT:".text", STRTAB:".strtab"});
+    construct_str_table!(mod str_table{TABLE, _EMPTY:"",TEXT:".text", STRTAB:".strtab", SYMTAB:".symtab", START:"_start"});
 
 
-    let after_all_headers = std::mem::size_of::<Header>()
-        + std::mem::size_of::<ProgramHeader>() * PROGRAM_HEADERS
+    let elf_header_start = 0;
+    let program_header_start =  elf_header_start + std::mem::size_of::<Header>();
+    let section_header_start = program_header_start
+        + std::mem::size_of::<ProgramHeader>() * PROGRAM_HEADERS;
+    let str_table_start = section_header_start
         + std::mem::size_of::<SectionHeader>() * SECTION_HEADERS;
 
+    let symbol_table_start = str_table_start + str_table::TABLE.len();
 
-    let after_str_tab = after_all_headers + table::TABLE.len();
+    let program_start_unaligned = symbol_table_start 
+        + std::mem::size_of::<SymbolTableEntry>() * SYMBOLS;
 
-    let aligned_after_str_tab =((after_str_tab as u64 + PROGRAM_ALIGN-1) / PROGRAM_ALIGN) * PROGRAM_ALIGN;
+    let program_start_file =((program_start_unaligned as u64 + PROGRAM_ALIGN-1) / PROGRAM_ALIGN) * PROGRAM_ALIGN;
 
-
-    let programs:[ProgramHeader; PROGRAM_HEADERS] = [ProgramHeader {
+    let programs:[ProgramHeader; PROGRAM_HEADERS] = [
+        ProgramHeader {
         p_type: 1.into(),       // PT_LOAD
         flags: 0x5.into(),      // PT_READ PT_EXECUTE
-        file_offset: aligned_after_str_tab.into(), 
+        file_offset: program_start_file.into(), 
         virtual_addr: PROGRAM_START.into(),
         physical_addr: PROGRAM_START.into(),
         file_size: (instructions.len() as u64).into(),
@@ -418,29 +458,53 @@ fn write_elf(file: &mut impl std::io::Write, instructions: &[u8]) -> std::io::Re
     let sections: [SectionHeader; SECTION_HEADERS] = [
         SectionHeader::default(),
         SectionHeader {
-            name_off: (table::STRTAB as u32).into(),
+            name_off: (str_table::STRTAB as u32).into(),
             s_type: 0x3.into(), // zero terminated string
             flags: 0.into(),
             virtual_address: 0.into(),
-            file_off: (after_all_headers as u64).into(),
-            file_size: (table::TABLE.len() as u64).into(),
+            file_off: (str_table_start as u64).into(),
+            file_size: (str_table::TABLE.len() as u64).into(),
             link: 0.into(),
             info: 0.into(),
             addr_align: 1.into(),
             ent_size: 0.into(),
         },
         SectionHeader {
-            name_off: (table::TEXT as u32).into(),
-            s_type: 1.into(),   // SHT_PROGBITS
+            name_off: (str_table::SYMTAB as u32).into(),
+            s_type: 0x2.into(), // symbol table
             flags: 0.into(),
+            virtual_address: 0.into(),
+            file_off: (symbol_table_start as u64).into(),
+            file_size: ((std::mem::size_of::<SymbolTableEntry>() * SYMBOLS) as u64).into(),
+            link: 1.into(), // str table
+            info: 1.into(), // first global symbol
+            addr_align: 1.into(),
+            ent_size: (std::mem::size_of::<SymbolTableEntry>() as u64).into(),
+        },
+        SectionHeader {
+            name_off: (str_table::TEXT as u32).into(),
+            s_type: 1.into(),   // SHT_PROGBITS
+            flags: 6.into(),    // flags A(allocate in image?) X(exacutable?)
             virtual_address: PROGRAM_START.into(),
-            file_off: (aligned_after_str_tab as u64).into(),
+            file_off: (program_start_file as u64).into(),
             file_size: (instructions.len() as u64).into(),
             link: 0.into(),
             info: 0.into(),
             addr_align: PROGRAM_ALIGN.into(),
             ent_size: 0.into(),
         },
+    ];
+
+    let symbols: [SymbolTableEntry; SYMBOLS] = [
+        SymbolTableEntry::default(),
+        SymbolTableEntry{
+            name: (str_table::START as u32).into(),
+            info: (0x12).into(),     //global function
+            other: 0.into(),    // default
+            section_index: 3.into(),    //program section 
+            addr: PROGRAM_START.into(),
+            sym_size: (instructions.len() as u64).into(),
+        }
     ];
 
     let header = Header {
@@ -455,11 +519,8 @@ fn write_elf(file: &mut impl std::io::Write, instructions: &[u8]) -> std::io::Re
         machine: 0x3E.into(), // x86-64
         version_2: 1.into(),
         entry: PROGRAM_START.into(),
-        program_header_off: (std::mem::size_of::<Header>() as u64).into(),
-        section_header_off: ((std::mem::size_of::<Header>()
-            + std::mem::size_of::<ProgramHeader>() * PROGRAM_HEADERS)
-            as u64)
-            .into(),
+        program_header_off: (program_header_start as u64).into(),
+        section_header_off: (section_header_start as u64).into(),
         flags: 0.into(),
         header_size: (std::mem::size_of::<Header>() as u16).into(),
         program_header_size: (std::mem::size_of::<ProgramHeader>() as u16).into(),
@@ -469,19 +530,24 @@ fn write_elf(file: &mut impl std::io::Write, instructions: &[u8]) -> std::io::Re
         index_section_header_names: 1.into(),
     };
 
-    file.write_all(&unsafe{std::mem::transmute::<Header, [u8; std::mem::size_of::<Header>()]>(header)})?;
+    file.write_all(header.repr_bytes())?;
 
-    for ph in programs{
-        file.write_all(&unsafe{std::mem::transmute::<ProgramHeader, [u8; std::mem::size_of::<ProgramHeader>()]>(ph)})?;
+    for ph in &programs{
+        file.write_all(ph.repr_bytes())?;
     }
 
-    for section in sections{
-        file.write_all(&unsafe{std::mem::transmute::<SectionHeader, [u8; std::mem::size_of::<SectionHeader>()]>(section)})?;
+    for section in &sections{
+        file.write_all(section.repr_bytes())?;
     }
 
-    file.write_all(table::TABLE.as_bytes())?;
+    file.write_all(str_table::TABLE.as_bytes())?;
 
-    for _ in (after_str_tab as u64)..aligned_after_str_tab{
+    for symbol in &symbols{
+        file.write_all(symbol.repr_bytes())?;
+    }
+
+    // alignment
+    for _ in program_start_unaligned..(program_start_file as usize){
         file.write_all(&[0])?;
     }
 

@@ -9,10 +9,8 @@ type Ast = Vec<AstNode>;
 #[derive(Debug)]
 pub enum AstNode {
     While(Ast),
-    IncrementPointer(usize),
-    DecrementPointer(usize),
-    IncrementValue(usize),
-    DecrementValue(usize),
+    OffPtr(i64),
+    ChangeValue(u8),
     Output,
     Input,
 }
@@ -29,13 +27,11 @@ impl<'a> Brain<'a> {
 
         enum State {
             Default,
-            IncPtr,
-            DecPtr,
-            IncVal,
-            DecVal,
+            Ptr,
+            Val,
         }
 
-        let mut val: usize = 0;
+        let mut val: i64 = 0;
         let mut state = State::Default;
 
         while let Some(char) = self.chars.peek() {
@@ -43,10 +39,14 @@ impl<'a> Brain<'a> {
             match state {
                 State::Default => {
                     match char {
-                        '+' => state = State::IncVal,
-                        '>' => state = State::IncPtr,
-                        '-' => state = State::DecVal,
-                        '<' => state = State::DecPtr,
+                        '+'|'-' => {
+                            val = if *char=='+'{1}else{-1};
+                            state = State::Val
+                        },
+                        '>'|'<' => {
+                            val = if *char=='>'{1}else{-1};
+                            state = State::Ptr
+                        },
                         '.' => top.push(AstNode::Output),
                         ',' => top.push(AstNode::Input),
                         '[' => {
@@ -64,44 +64,22 @@ impl<'a> Brain<'a> {
                         }
                         _ => {}
                     }
-                    match char {
-                        '+' | '>' | '-' | '<' => val += 1,
-                        _ => {}
-                    }
                 }
-                State::IncPtr => match char {
+                State::Ptr => match char {
                     '>' => val += 1,
+                    '<' => val -= 1,
                     _ => {
-                        top.push(AstNode::IncrementPointer(val));
+                        top.push(AstNode::OffPtr(val));
                         state = State::Default;
-                        val = 0;
                         consume = false;
                     }
                 },
-                State::DecPtr => match char {
-                    '<' => val += 1,
-                    _ => {
-                        top.push(AstNode::DecrementPointer(val));
-                        state = State::Default;
-                        val = 0;
-                        consume = false;
-                    }
-                },
-                State::IncVal => match char {
+                State::Val => match char {
                     '+' => val += 1,
+                    '-' => val -= 1,
                     _ => {
-                        top.push(AstNode::IncrementValue(val));
+                        top.push(AstNode::ChangeValue(val as u8));
                         state = State::Default;
-                        val = 0;
-                        consume = false;
-                    }
-                },
-                State::DecVal => match char {
-                    '-' => val += 1,
-                    _ => {
-                        top.push(AstNode::DecrementValue(val));
-                        state = State::Default;
-                        val = 0;
                         consume = false;
                     }
                 },
@@ -122,10 +100,10 @@ impl<'a> Brain<'a> {
 
         while let Some(char) = self.chars.next() {
             match char {
-                '+' => top.push(AstNode::IncrementValue(1)),
-                '>' => top.push(AstNode::IncrementPointer(1)),
-                '-' => top.push(AstNode::DecrementValue(1)),
-                '<' => top.push(AstNode::DecrementPointer(1)),
+                '+' => top.push(AstNode::ChangeValue(1)),
+                '>' => top.push(AstNode::OffPtr(1)),
+                '-' => top.push(AstNode::ChangeValue(255)),
+                '<' => top.push(AstNode::OffPtr(-1)),
                 '.' => top.push(AstNode::Output),
                 ',' => top.push(AstNode::Input),
                 '[' => {

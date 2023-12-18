@@ -23,8 +23,8 @@ enum WhileOpt {
 
 struct WhileResult {
     info: WhileOpt,
-    known_iterations: Option<usize>,
-    known_ptr_off_per_iter: isize,
+    known_iterations: Option<u64>,
+    known_ptr_off_per_iter: i64,
 }
 
 enum Simple {
@@ -48,7 +48,7 @@ enum Touched {
 }
 
 struct TouchedMap {
-    touched: HashMap<isize, Touched>,
+    touched: HashMap<i64, Touched>,
 }
 
 impl TouchedMap {
@@ -58,13 +58,13 @@ impl TouchedMap {
         }
     }
 
-    fn update_val(&mut self, ptr_pos: isize, update: u8) {
+    fn update_val(&mut self, ptr_pos: i64, update: u8) {
         if let Some(Touched::Offset(val)) = self.touched.get_mut(&ptr_pos) {
             *val = val.wrapping_add(update);
         }
     }
 
-    fn set_val(&mut self, ptr_pos: isize, value: Touched) {
+    fn set_val(&mut self, ptr_pos: i64, value: Touched) {
         self.touched.insert(ptr_pos, value);
     }
 }
@@ -106,12 +106,12 @@ impl TouchedMap {
 // }
 
 struct Stage3Opt {
-    knowns: HashMap<isize, Known>,
+    knowns: HashMap<i64, Known>,
     ptr_clobbered: bool,
 }
 
 impl Stage3Opt {
-    fn is_known_zero(&self, ptr_pos: isize) -> bool {
+    fn is_known_zero(&self, ptr_pos: i64) -> bool {
         if self.ptr_clobbered {
             return false;
         }
@@ -120,7 +120,7 @@ impl Stage3Opt {
             .map(|val| matches!(val, Known::Value(0)))
             .unwrap_or(true)
     }
-    fn get_knonw(&self, ptr_pos: isize) -> Option<u8> {
+    fn get_knonw(&self, ptr_pos: i64) -> Option<u8> {
         if self.ptr_clobbered {
             return None;
         }
@@ -129,7 +129,7 @@ impl Stage3Opt {
             Known::Clobbered => None,
         })
     }
-    fn update_val(&mut self, ptr_pos: isize, update: u8) {
+    fn update_val(&mut self, ptr_pos: i64, update: u8) {
         if self.ptr_clobbered {
             return;
         }
@@ -137,7 +137,7 @@ impl Stage3Opt {
             *val = val.wrapping_add(update);
         }
     }
-    fn set_val(&mut self, ptr_pos: isize, value: Known) {
+    fn set_val(&mut self, ptr_pos: i64, value: Known) {
         if self.ptr_clobbered {
             return;
         }
@@ -160,7 +160,7 @@ impl Stage3Opt {
                     }
                     let res = self.while_thing(ir, curr_ptr_off);
                     if let Some(iterations) = res.known_iterations {
-                        curr_ptr_off += iterations as isize * res.known_ptr_off_per_iter;
+                        curr_ptr_off += iterations as i64 * res.known_ptr_off_per_iter;
                     } else if res.known_ptr_off_per_iter != 0 {
                         self.clobber_mem();
                     }
@@ -184,11 +184,12 @@ impl Stage3Opt {
                 }
                 Ir::Print { ptr_off } => {}
                 Ir::Input { ptr_off } => self.set_val(*ptr_off + curr_ptr_off, Known::Clobbered),
+                Ir::Set { ptr_off, val } => todo!(),
             }
         }
     }
 
-    fn while_thing(&mut self, ir: &Vec<Ir>, entry_off: isize) -> WhileResult {
+    fn while_thing(&mut self, ir: &Vec<Ir>, entry_off: i64) -> WhileResult {
         let mut touched = TouchedMap::new();
         let mut result = WhileResult {
             info: todo!(),
@@ -212,6 +213,7 @@ impl Stage3Opt {
                     simple = false;
                     touched.set_val(*ptr_off + result.known_ptr_off_per_iter, Touched::Clobbered);
                 }
+                Ir::Set { ptr_off, val } => todo!(),
             }
         }
 

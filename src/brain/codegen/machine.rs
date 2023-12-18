@@ -4,18 +4,18 @@ use crate::brain::visitor::Visitor;
 
 #[allow(unused)]
 enum Instruction {
-    Call { byte_off: isize },
+    Call { byte_off: i32 },
     MovR11 { abs_addr: usize },
     MovRbxRdi,
     JmpR11,
-    AddByteMemRbx { byte_off: isize, val: u8 },
-    LeaRbxRbx { byte_off: isize },
-    LeaRdiRbx { byte_off: isize },
-    Je { byte_off: isize },
-    Jne { byte_off: isize },
-    CmpByteMemZero { byte_off: isize },
+    AddByteMemRbx { byte_off: i32, val: u8 },
+    LeaRbxRbx { byte_off: i32 },
+    LeaRdiRbx { byte_off: i32 },
+    Je { byte_off: i32 },
+    Jne { byte_off: i32 },
+    CmpByteMemZero { byte_off: i32 },
     Ret,
-    Jmp { byte_off: isize },
+    Jmp { byte_off: i32 },
     PopRbx,
     PushRbx,
     // extras
@@ -27,13 +27,14 @@ enum Instruction {
     PushU8(u8),
     MoveRsiRsp,
     AddImmRsp(i32),
-    LeaRsiRbx { byte_off: isize },
+    LeaRsiRbx { byte_off: i32 },
     MovRbxRsp,
     Hlt,
+    MoveRbxImmImmByte { byte_off: i32, val: u8 },
 }
 
 impl Instruction {
-    pub fn size(&self) -> usize {
+    pub fn size(&self) -> u64 {
         match self {
             Instruction::Call { .. } => 5,
             Instruction::MovR11 { .. } => 10,
@@ -125,6 +126,13 @@ impl Instruction {
             }
             Instruction::MovRbxRsp => 3,
             Instruction::Hlt => 1,
+            Instruction::MoveRbxImmImmByte { byte_off, val } => if *byte_off == 0 {
+                    3
+                } else if (-128..128).contains(byte_off) {
+                    4
+                } else {
+                    7
+                },
         }
     }
 
@@ -257,25 +265,34 @@ impl Instruction {
             }
             Instruction::MovRbxRsp => out.write_all(&[0x48, 0x89, 0xe3]),
             Instruction::Hlt => out.write_all(&[0xf4]),
+            Instruction::MoveRbxImmImmByte { byte_off, val } => if *byte_off == 0 {
+                out.write_all(&[0xc6, 0x03, *val])
+            } else if (-128..128).contains(byte_off) {
+                out.write_all(&[0xc6, 0x43, *byte_off as u8, *val as u8])
+            } else {
+                out.write_all(&[0xc6, 0x83])?;
+                out.write_all(&(*byte_off as u32).to_le_bytes())?;
+                out.write_all(&[*val as u8])
+            },
         }
     }
 
-    fn reloc(&mut self, start_inst: usize, to: usize) {
+    fn reloc(&mut self, start_inst: u64, to: u64) {
         match self {
             Self::Jmp { byte_off } => {
-                *byte_off = to as isize - (start_inst as isize + 2);
+                *byte_off = (to as i64 - (start_inst as i64 + 2)) as i32;
                 if !(-128..128).contains(byte_off) {
                     *byte_off -= 3;
                 }
             }
             Self::Je { byte_off } | Self::Jne { byte_off } => {
-                *byte_off = to as isize - (start_inst as isize + 2);
+                *byte_off = (to as i64 - (start_inst as i64 + 2)) as i32;
                 if !(-128..128).contains(byte_off) {
                     *byte_off -= 4;
                 }
             }
             Self::Call { byte_off } => {
-                *byte_off = to as isize - (start_inst as isize + 5);
+                *byte_off = (to as i64 - (start_inst as i64 + 5)) as i32;
             }
             _ => {}
         }
@@ -290,7 +307,7 @@ struct InstructionIndex(usize);
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct Symbol {
-    byte_off: usize,
+    byte_off: u64,
     instruction_off: usize,
 }
 
@@ -318,7 +335,7 @@ pub enum EndKind {
 pub struct MachineGen<T: Write> {
     asm: T,
     instruction: Vec<Instruction>,
-    byte_off: usize,
+    byte_off: u64,
     symbol_queue: Vec<SymbolId>,
 
     symbols: Vec<Symbol>,
@@ -498,19 +515,19 @@ impl<T: Write> Visitor for MachineGen<T> {
         }
     }
 
-    fn visit_while_start(&mut self, ptr_off: isize) {
+    fn visit_while_start(&mut self, ptr_off: i64) {
         let (start, end) = self.begin_section();
-        self.push_instrucion(Instruction::CmpByteMemZero { byte_off: ptr_off });
+        self.push_instrucion(Instruction::CmpByteMemZero { byte_off: ptr_off as i32 });
         self.push_reloc_instrucion(end, Instruction::Je { byte_off: -2 });
         self.update_symbol_to_current(start);
     }
 
-    fn visit_while_end(&mut self, ptr_off: isize) {
+    fn visit_while_end(&mut self, ptr_off: i64) {
         let (start, end) = self.end_section();
-        self.push_instrucion(Instruction::CmpByteMemZero { byte_off: ptr_off });
+        self.push_instrucion(Instruction::CmpByteMemZero { byte_off: ptr_off as i32 });
 
-        let wanted = self.symbols[start.0].byte_off as isize;
-        let mut current = (self.byte_off + 2) as isize;
+        let wanted = self.symbols[start.0].byte_off as i64;
+        let mut current = (self.byte_off + 2) as i64;
         if !(-128..127).contains(&current) {
             current += 3;
         }
@@ -518,34 +535,38 @@ impl<T: Write> Visitor for MachineGen<T> {
         self.push_reloc_instrucion(
             start,
             Instruction::Jne {
-                byte_off: current - wanted,
+                byte_off: (current - wanted) as i32,
             },
         );
         self.update_symbol_to_current(end);
     }
 
-    fn visit_mem_off(&mut self, val: u8, byte_off: isize) {
+    fn visit_mem_off(&mut self, val: u8, byte_off: i64) {
         if val != 0 {
-            self.push_instrucion(Instruction::AddByteMemRbx { byte_off, val });
+            self.push_instrucion(Instruction::AddByteMemRbx { byte_off: byte_off as i32, val });
         }
     }
 
-    fn visit_ptr_off(&mut self, byte_off: isize) {
+    fn visit_mem_set(&mut self, val: u8, off: i64) {
+        self.push_instrucion(Instruction::MoveRbxImmImmByte{byte_off: off as i32, val})
+    }
+
+    fn visit_ptr_off(&mut self, byte_off: i64) {
         if byte_off != 0 {
-            self.push_instrucion(Instruction::LeaRbxRbx { byte_off });
+            self.push_instrucion(Instruction::LeaRbxRbx { byte_off: byte_off as i32 });
         }
     }
 
-    fn visit_print(&mut self, byte_off: isize) {
+    fn visit_print(&mut self, byte_off: i64) {
         match self.io {
             IoKind::UserDefinedIO { .. } => {
-                self.push_instrucion(Instruction::LeaRdiRbx { byte_off });
-                let wanted = self.symbols[0].byte_off as isize;
-                let current = (self.byte_off + 5) as isize;
+                self.push_instrucion(Instruction::LeaRdiRbx { byte_off: byte_off as i32 });
+                let wanted = self.symbols[0].byte_off as i64;
+                let current = (self.byte_off + 5) as i64;
                 self.push_reloc_instrucion(
                     SymbolId(0),
                     Instruction::Call {
-                        byte_off: current - wanted,
+                        byte_off: (current - wanted) as i32,
                     },
                 );
             }
@@ -553,22 +574,22 @@ impl<T: Write> Visitor for MachineGen<T> {
                 self.push_instrucion(Instruction::MoveImmRax(1)); // sys_write
                 self.push_instrucion(Instruction::MoveImmRdi(1)); // stdout
                 self.push_instrucion(Instruction::MoveImmRdx(1)); // length
-                self.push_instrucion(Instruction::LeaRsiRbx { byte_off });
+                self.push_instrucion(Instruction::LeaRsiRbx { byte_off: byte_off  as i32 });
                 self.push_instrucion(Instruction::Syscall);
             }
         }
     }
 
-    fn visit_read(&mut self, byte_off: isize) {
+    fn visit_read(&mut self, byte_off: i64) {
         match self.io {
             IoKind::UserDefinedIO { .. } => {
-                self.push_instrucion(Instruction::LeaRdiRbx { byte_off });
-                let wanted = self.symbols[1].byte_off as isize;
-                let current = (self.byte_off + 5) as isize;
+                self.push_instrucion(Instruction::LeaRdiRbx { byte_off: byte_off as i32 });
+                let wanted = self.symbols[1].byte_off as i64;
+                let current = (self.byte_off + 5) as i64;
                 self.push_reloc_instrucion(
                     SymbolId(1),
                     Instruction::Call {
-                        byte_off: current - wanted,
+                        byte_off: (current - wanted) as i32,
                     },
                 );
             }
@@ -576,7 +597,7 @@ impl<T: Write> Visitor for MachineGen<T> {
                 self.push_instrucion(Instruction::MoveImmRax(0)); // sys_read
                 self.push_instrucion(Instruction::MoveImmRdi(0)); // stdin
                 self.push_instrucion(Instruction::MoveImmRdx(1)); // length
-                self.push_instrucion(Instruction::LeaRsiRbx { byte_off });
+                self.push_instrucion(Instruction::LeaRsiRbx { byte_off: byte_off as i32 });
                 self.push_instrucion(Instruction::Syscall);
             }
         }

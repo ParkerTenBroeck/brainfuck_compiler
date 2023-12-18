@@ -51,7 +51,7 @@ impl<T: std::io::Write> Visitor for AsmCodeGen<T> {
         writeln!(&mut self.asm, "ret").unwrap();
     }
 
-    fn visit_while_start(&mut self, ptr_off: isize) {
+    fn visit_while_start(&mut self, ptr_off: i64) {
         // self.white_space();
         let tmp = self.next_label();
 
@@ -66,7 +66,7 @@ impl<T: std::io::Write> Visitor for AsmCodeGen<T> {
         self.level += 1;
     }
 
-    fn visit_while_end(&mut self, ptr_off: isize) {
+    fn visit_while_end(&mut self, ptr_off: i64) {
         self.level -= 1;
 
         let tmp = self.pop_lable();
@@ -76,7 +76,7 @@ impl<T: std::io::Write> Visitor for AsmCodeGen<T> {
         writeln!(&mut self.asm, "LOOP_END_{tmp}:").unwrap();
     }
 
-    fn visit_mem_off(&mut self, val: u8, ptr_off: isize) {
+    fn visit_mem_off(&mut self, val: u8, ptr_off: i64) {
         if val == 0 {
         } else if ptr_off == 0 {
             writeln!(&mut self.asm, "add BYTE [rbx], 0x{:02x}", val as u8).unwrap();
@@ -98,7 +98,28 @@ impl<T: std::io::Write> Visitor for AsmCodeGen<T> {
         }
     }
 
-    fn visit_ptr_off(&mut self, val: isize) {
+    fn visit_mem_set(&mut self, val: u8, off: i64) {
+        if off == 0 {
+            writeln!(&mut self.asm, "mov BYTE [rbx], 0x{:02x}", val).unwrap()
+        } else if off.is_negative() {
+            writeln!(
+                &mut self.asm,
+                "add BYTE [rbx-{}], 0x{:02x}",
+                off.abs(),
+                val
+            )
+            .unwrap();
+        } else {
+            writeln!(
+                &mut self.asm,
+                "add BYTE [rbx+{off}], 0x{:02x}",
+                val as u8
+            )
+            .unwrap();
+        }
+    }
+
+    fn visit_ptr_off(&mut self, val: i64) {
         if val == 0 {
         } else if val.is_negative() {
             writeln!(&mut self.asm, "lea rbx,[rbx-{}]", val.abs()).unwrap();
@@ -107,7 +128,7 @@ impl<T: std::io::Write> Visitor for AsmCodeGen<T> {
         }
     }
 
-    fn visit_print(&mut self, ptr_off: isize) {
+    fn visit_print(&mut self, ptr_off: i64) {
         if ptr_off.is_negative() {
             writeln!(&mut self.asm, "lea rdi, [rbx-{}]", ptr_off.abs()).unwrap();
         } else {
@@ -116,7 +137,7 @@ impl<T: std::io::Write> Visitor for AsmCodeGen<T> {
         writeln!(&mut self.asm, "call print").unwrap();
     }
 
-    fn visit_read(&mut self, ptr_off: isize) {
+    fn visit_read(&mut self, ptr_off: i64) {
         if ptr_off.is_negative() {
             writeln!(&mut self.asm, "lea rdi, [rbx-{}]", ptr_off.abs()).unwrap();
         } else {

@@ -4,13 +4,14 @@ pub trait Visitor {
     fn visit_start(&mut self);
     fn visit_end(&mut self);
 
-    fn visit_while_start(&mut self, off: isize);
-    fn visit_while_end(&mut self, off: isize);
+    fn visit_while_start(&mut self, off: i64);
+    fn visit_while_end(&mut self, off: i64);
 
-    fn visit_mem_off(&mut self, val: u8, off: isize);
-    fn visit_ptr_off(&mut self, off: isize);
-    fn visit_print(&mut self, off: isize);
-    fn visit_read(&mut self, off: isize);
+    fn visit_mem_off(&mut self, val: u8, off: i64);
+    fn visit_mem_set(&mut self, val: u8, off: i64);
+    fn visit_ptr_off(&mut self, off: i64);
+    fn visit_print(&mut self, off: i64);
+    fn visit_read(&mut self, off: i64);
 }
 
 pub fn visit_all(code: &Vec<Ir>, visiter: &mut impl Visitor) {
@@ -38,5 +39,6 @@ fn visit_terminal(term: &Ir, visiter: &mut impl Visitor) {
         Ir::OffsetPtr { ptr_off } => visiter.visit_ptr_off(*ptr_off),
         Ir::Print { ptr_off } => visiter.visit_print(*ptr_off),
         Ir::Input { ptr_off } => visiter.visit_read(*ptr_off),
+        Ir::Set { ptr_off, val } => visiter.visit_mem_set(*val, *ptr_off),
     }
 }

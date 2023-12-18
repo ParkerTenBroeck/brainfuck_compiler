@@ -1,5 +1,8 @@
 section .text
 global _start
+mov     byte [rbx ], 0
+mov     byte [rbx - 1], 0
+mov     byte [rbx - 1234], 5
 
 add rsp,1000 *8
 mov rbx, rsp

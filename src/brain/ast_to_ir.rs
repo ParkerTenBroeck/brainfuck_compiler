@@ -2,11 +2,12 @@ use super::parser::AstNode;
 
 #[derive(Debug, Clone)]
 pub enum Ir {
-    While{ inside: Vec<Ir>, ptr_off: isize},
-    OffsetValue { val_off: u8, ptr_off: isize },
-    OffsetPtr { ptr_off: isize },
-    Print { ptr_off: isize },
-    Input { ptr_off: isize },
+    While{ inside: Vec<Ir>, ptr_off: i64},
+    OffsetValue { val_off: u8, ptr_off: i64 },
+    OffsetPtr { ptr_off: i64 },
+    Print { ptr_off: i64 },
+    Input { ptr_off: i64 },
+    Set{ptr_off: i64, val: u8}
 }
 
 pub fn ast_to_ir(ast: &[AstNode]) -> Vec<Ir> {
@@ -15,7 +16,7 @@ pub fn ast_to_ir(ast: &[AstNode]) -> Vec<Ir> {
     }
     let mut vec = Vec::new();
 
-    let mut offset = 0isize;
+    let mut offset = 0i64;
 
     for term in ast {
         match term {
@@ -26,14 +27,9 @@ pub fn ast_to_ir(ast: &[AstNode]) -> Vec<Ir> {
                 }
                 vec.push(Ir::While{inside: ast_to_ir(ast), ptr_off: offset});
             }
-            AstNode::IncrementPointer(off) => offset += *off as isize,
-            AstNode::DecrementPointer(off) => offset -= *off as isize,
-            AstNode::IncrementValue(val) => vec.push(Ir::OffsetValue {
+            AstNode::OffPtr(off) => offset += *off,
+            AstNode::ChangeValue(val) => vec.push(Ir::OffsetValue {
                 val_off: *val as u8,
-                ptr_off: offset,
-            }),
-            AstNode::DecrementValue(val) => vec.push(Ir::OffsetValue {
-                val_off: 1 + !(*val as u8),
                 ptr_off: offset,
             }),
             AstNode::Output => vec.push(Ir::Print { ptr_off: offset }),
@@ -47,32 +43,27 @@ pub fn ast_to_ir(ast: &[AstNode]) -> Vec<Ir> {
     vec
 }
 
-pub fn ast_to_ir_o(offset: isize, ast: &[AstNode]) -> Vec<Ir> {
-    // match ast{
-    //     // [AstNode::IncrementValue()]
-    //     _ => {}
-    // }
+fn ast_to_ir_o(offset: i64, ast: &[AstNode]) -> Vec<Ir> {
+    
     let mut vec = Vec::new();
 
-    let mut local_offset = 0isize;
+    let mut local_offset = 0i64;
 
     for term in ast {
         match term {
             AstNode::While(ast) => {
-                // if local_offset != 0 {
-                //     vec.push(Ir::OffsetPtr { ptr_off: local_offset });
-                //     local_offset = 0;
-                // }
-                vec.push(Ir::While{inside:ast_to_ir_o(offset + local_offset, ast), ptr_off: offset + local_offset});
+                match ast[..]{
+                    [AstNode::ChangeValue(val)] if val & 1 == 1 => {
+                        vec.push(Ir::Set { ptr_off: offset + local_offset, val: 0 })
+                    }
+                    _ => {
+                        vec.push(Ir::While{inside:ast_to_ir_o(offset + local_offset, ast), ptr_off: offset + local_offset});
+                    }
+                }
             }
-            AstNode::IncrementPointer(off) => local_offset += *off as isize,
-            AstNode::DecrementPointer(off) => local_offset -= *off as isize,
-            AstNode::IncrementValue(val) => vec.push(Ir::OffsetValue {
+            AstNode::OffPtr(off) => local_offset += *off,
+            AstNode::ChangeValue(val) => vec.push(Ir::OffsetValue {
                 val_off: *val as u8,
-                ptr_off: offset + local_offset,
-            }),
-            AstNode::DecrementValue(val) => vec.push(Ir::OffsetValue {
-                val_off: 1 + !(*val as u8),
                 ptr_off: offset + local_offset,
             }),
             AstNode::Output => vec.push(Ir::Print { ptr_off: offset + local_offset }),
@@ -95,18 +86,11 @@ pub fn ast_to_ir_direct(stage1: &[AstNode]) -> Vec<Ir> {
             AstNode::While(ast) => {
                 vec.push(Ir::While{ inside: ast_to_ir_direct(ast), ptr_off: 0});
             }
-            AstNode::IncrementPointer(off) => vec.push(Ir::OffsetPtr {
-                ptr_off: *off as isize,
+            AstNode::OffPtr(off) => vec.push(Ir::OffsetPtr {
+                ptr_off: *off,
             }),
-            AstNode::DecrementPointer(off) => vec.push(Ir::OffsetPtr {
-                ptr_off: -(*off as isize),
-            }),
-            AstNode::IncrementValue(val) => vec.push(Ir::OffsetValue {
-                val_off: *val as u8,
-                ptr_off: 0,
-            }),
-            AstNode::DecrementValue(val) => vec.push(Ir::OffsetValue {
-                val_off: 1 + !(*val as u8),
+            AstNode::ChangeValue(val) => vec.push(Ir::OffsetValue {
+                val_off: *val,
                 ptr_off: 0,
             }),
             AstNode::Output => vec.push(Ir::Print { ptr_off: 0 }),
