@@ -309,7 +309,6 @@ impl_ints!(U16LE, u16);
 impl_ints!(U32LE, u32);
 impl_ints!(USizeLE, u64);
 
-// use std::ffi::bo
 
 #[repr(C, packed)]
 struct Header {
