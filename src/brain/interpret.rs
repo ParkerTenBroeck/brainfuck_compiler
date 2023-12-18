@@ -1,13 +1,12 @@
 use super::{ast_to_ir::Ir, parser::AstNode};
 
-
-fn read() -> u8{
-    let bruh = std::io::Read::bytes(std::io::stdin()) 
-            .next()
-            .and_then(|result| result.ok());
-    if let Some(some) = bruh{
+fn read() -> u8 {
+    let bruh = std::io::Read::bytes(std::io::stdin())
+        .next()
+        .and_then(|result| result.ok());
+    if let Some(some) = bruh {
         some as u8
-    }else{
+    } else {
         0
     }
 }

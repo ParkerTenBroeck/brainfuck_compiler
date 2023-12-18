@@ -23,7 +23,6 @@ impl<'a> Brain<'a> {
             chars: data.chars().peekable(),
         }
     }
-
     pub fn parse(&mut self) -> Vec<AstNode> {
         let mut top = Ast::new();
         let mut stack = Vec::new();
@@ -112,6 +111,35 @@ impl<'a> Brain<'a> {
             }
         }
 
+        assert!(stack.is_empty());
+
+        top
+    }
+
+    pub fn parse_bad(&mut self) -> Vec<AstNode> {
+        let mut top = Ast::new();
+        let mut stack = Vec::new();
+
+        while let Some(char) = self.chars.next() {
+            match char {
+                '+' => top.push(AstNode::IncrementValue(1)),
+                '>' => top.push(AstNode::IncrementPointer(1)),
+                '-' => top.push(AstNode::DecrementValue(1)),
+                '<' => top.push(AstNode::DecrementPointer(1)),
+                '.' => top.push(AstNode::Output),
+                ',' => top.push(AstNode::Input),
+                '[' => {
+                    stack.push(top);
+                    top = Vec::new();
+                }
+                ']' => {
+                    let mut tmp: Vec<AstNode> = stack.pop().unwrap();
+                    tmp.push(AstNode::While(top));
+                    top = tmp;
+                }
+                _ => {}
+            }
+        }
         assert!(stack.is_empty());
 
         top

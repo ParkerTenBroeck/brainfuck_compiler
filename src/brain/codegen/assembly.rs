@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::io::Write;
 
 use crate::brain::visitor::Visitor;
 
@@ -30,7 +30,7 @@ impl<T: Write> AsmCodeGen<T> {
     }
 }
 
-impl<T: std::fmt::Write> Visitor for AsmCodeGen<T> {
+impl<T: std::io::Write> Visitor for AsmCodeGen<T> {
     fn visit_start(&mut self) {
         writeln!(&mut self.asm, "_start:").unwrap();
         writeln!(&mut self.asm, "mov rbx, rdi").unwrap();
