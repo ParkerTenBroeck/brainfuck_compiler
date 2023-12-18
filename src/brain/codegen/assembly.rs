@@ -51,7 +51,7 @@ impl<T: std::io::Write> Visitor for AsmCodeGen<T> {
         writeln!(&mut self.asm, "ret").unwrap();
     }
 
-    fn visit_while_start(&mut self) {
+    fn visit_while_start(&mut self, ptr_off: isize) {
         // self.white_space();
         let tmp = self.next_label();
 
@@ -66,7 +66,7 @@ impl<T: std::io::Write> Visitor for AsmCodeGen<T> {
         self.level += 1;
     }
 
-    fn visit_while_end(&mut self) {
+    fn visit_while_end(&mut self, ptr_off: isize) {
         self.level -= 1;
 
         let tmp = self.pop_lable();

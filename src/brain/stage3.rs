@@ -154,7 +154,7 @@ impl Stage3Opt {
 
         for item in ir {
             match item {
-                Ir::While(ir) => {
+                Ir::While{inside, ptr_off} => {
                     if self.get_knonw(curr_ptr_off) == Some(0) {
                         continue;
                     }
@@ -198,7 +198,7 @@ impl Stage3Opt {
         let mut simple = true;
         for item in ir {
             match item {
-                Ir::While(_) => {}
+                Ir::While{..} => {}
                 Ir::OffsetValue { val_off, ptr_off } => {
                     touched.update_val(*ptr_off + result.known_ptr_off_per_iter, *val_off);
                 }

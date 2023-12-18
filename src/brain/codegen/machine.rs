@@ -399,7 +399,12 @@ impl<T: Write> MachineGen<T> {
 
 impl<T: Write> Visitor for MachineGen<T> {
     fn visit_start(&mut self) {
-        self.push_instrucion(Instruction::PushRbx);
+        match self.end{
+            EndKind::Kill => {},
+            EndKind::Return => {
+                self.push_instrucion(Instruction::PushRbx);
+            }
+        }
 
         match self.stack {
             StackKind::Provided => {
@@ -493,16 +498,16 @@ impl<T: Write> Visitor for MachineGen<T> {
         }
     }
 
-    fn visit_while_start(&mut self) {
+    fn visit_while_start(&mut self, ptr_off: isize) {
         let (start, end) = self.begin_section();
-        self.push_instrucion(Instruction::CmpByteMemZero { byte_off: 0 });
+        self.push_instrucion(Instruction::CmpByteMemZero { byte_off: ptr_off });
         self.push_reloc_instrucion(end, Instruction::Je { byte_off: -2 });
         self.update_symbol_to_current(start);
     }
 
-    fn visit_while_end(&mut self) {
+    fn visit_while_end(&mut self, ptr_off: isize) {
         let (start, end) = self.end_section();
-        self.push_instrucion(Instruction::CmpByteMemZero { byte_off: 0 });
+        self.push_instrucion(Instruction::CmpByteMemZero { byte_off: ptr_off });
 
         let wanted = self.symbols[start.0].byte_off as isize;
         let mut current = (self.byte_off + 2) as isize;

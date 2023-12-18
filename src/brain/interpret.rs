@@ -80,8 +80,8 @@ impl BrainInterpretIr {
         }
     }
 
-    pub fn interpret_1(&mut self, code: &Vec<Ir>) {
-        while self.data[self.position] != 0 {
+    pub fn interpret_1(&mut self, offset: isize, code: &Vec<Ir>) {
+        while self.data[self.position.wrapping_add_signed(offset)] != 0 {
             for term in code {
                 self.run_term(term);
             }
@@ -90,7 +90,7 @@ impl BrainInterpretIr {
 
     fn run_term(&mut self, term: &Ir) {
         match term {
-            Ir::While(inner) => self.interpret_1(inner),
+            Ir::While{ inside, ptr_off } => self.interpret_1(*ptr_off, inside),
             Ir::OffsetValue { val_off, ptr_off } => {
                 let position = (self.position as isize + ptr_off) as usize;
 

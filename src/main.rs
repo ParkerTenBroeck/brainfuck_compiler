@@ -240,6 +240,8 @@ fn main() -> std::io::Result<()> {
         )
         .unwrap();
 
+        println!("{:?}", map.data());
+
         unsafe {
             std::ptr::copy(instructions.as_ptr(), map.data(), instructions.len());
         }
@@ -364,7 +366,7 @@ struct SectionHeader {
     ent_size: USizeLE,
 }
 
-fn write_elf(file: &mut std::fs::File, instructions: &[u8]) -> std::io::Result<()> {
+fn write_elf(file: &mut impl std::io::Write, instructions: &[u8]) -> std::io::Result<()> {
     const PROGRAM_HEADERS: usize = 1;
     const SECTION_HEADERS: usize = 3;
     const PROGRAM_ALIGN: u64 = 0x1000;
@@ -432,7 +434,7 @@ fn write_elf(file: &mut std::fs::File, instructions: &[u8]) -> std::io::Result<(
             s_type: 1.into(),   // SHT_PROGBITS
             flags: 0.into(),
             virtual_address: PROGRAM_START.into(),
-            file_off: (after_str_tab as u64).into(),
+            file_off: (aligned_after_str_tab as u64).into(),
             file_size: (instructions.len() as u64).into(),
             link: 0.into(),
             info: 0.into(),

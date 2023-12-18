@@ -4,8 +4,8 @@ pub trait Visitor {
     fn visit_start(&mut self);
     fn visit_end(&mut self);
 
-    fn visit_while_start(&mut self);
-    fn visit_while_end(&mut self);
+    fn visit_while_start(&mut self, off: isize);
+    fn visit_while_end(&mut self, off: isize);
 
     fn visit_mem_off(&mut self, val: u8, off: isize);
     fn visit_ptr_off(&mut self, off: isize);
@@ -29,10 +29,10 @@ fn visit_all_1(code: &Vec<Ir>, visiter: &mut impl Visitor) {
 
 fn visit_terminal(term: &Ir, visiter: &mut impl Visitor) {
     match term {
-        Ir::While(term) => {
-            visiter.visit_while_start();
-            visit_all_1(term, visiter);
-            visiter.visit_while_end();
+        Ir::While { inside, ptr_off } => {
+            visiter.visit_while_start(*ptr_off);
+            visit_all_1(inside, visiter);
+            visiter.visit_while_end(*ptr_off);
         }
         Ir::OffsetValue { val_off, ptr_off } => visiter.visit_mem_off(*val_off, *ptr_off),
         Ir::OffsetPtr { ptr_off } => visiter.visit_ptr_off(*ptr_off),
