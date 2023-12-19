@@ -571,7 +571,7 @@ impl<T: Write> Visitor for MachineGen<T> {
                 );
             }
             IoKind::PreDefinedIO => {
-                self.push_instrucion(Instruction::MoveImmRax(1)); // sys_write
+                self.push_instrucion(Instruction::MoveImmRax(4)); // sys_write
                 self.push_instrucion(Instruction::MoveImmRdi(1)); // stdout
                 self.push_instrucion(Instruction::MoveImmRdx(1)); // length
                 self.push_instrucion(Instruction::LeaRsiRbx { byte_off: byte_off  as i32 });
