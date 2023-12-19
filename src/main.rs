@@ -512,7 +512,7 @@ fn write_elf(file: &mut impl std::io::Write, instructions: &[u8]) -> std::io::Re
         class: 2.into(),   // 64 bit
         data: 1.into(),    // le
         version: 1.into(), //version 1
-        osabi: 1.into(),   // system-v
+        osabi: 9.into(),   // system-v(0) freebsd(9)
         abiversion: 0.into(),
         pad: [0; 7],
         f_type: 2.into(),     // executable file
