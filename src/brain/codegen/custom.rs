@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io::Write};
 
-use crate::brain::visitor::Visitor;
+use super::{Backend, OutputKind};
 
 #[allow(unused)]
 enum Instruction {
@@ -126,13 +126,15 @@ impl Instruction {
             }
             Instruction::MovRbxRsp => 3,
             Instruction::Hlt => 1,
-            Instruction::MoveRbxImmImmByte { byte_off, val } => if *byte_off == 0 {
+            Instruction::MoveRbxImmImmByte { byte_off, .. } => {
+                if *byte_off == 0 {
                     3
                 } else if (-128..128).contains(byte_off) {
                     4
                 } else {
                     7
-                },
+                }
+            }
         }
     }
 
@@ -265,15 +267,17 @@ impl Instruction {
             }
             Instruction::MovRbxRsp => out.write_all(&[0x48, 0x89, 0xe3]),
             Instruction::Hlt => out.write_all(&[0xf4]),
-            Instruction::MoveRbxImmImmByte { byte_off, val } => if *byte_off == 0 {
-                out.write_all(&[0xc6, 0x03, *val])
-            } else if (-128..128).contains(byte_off) {
-                out.write_all(&[0xc6, 0x43, *byte_off as u8, *val as u8])
-            } else {
-                out.write_all(&[0xc6, 0x83])?;
-                out.write_all(&(*byte_off as u32).to_le_bytes())?;
-                out.write_all(&[*val as u8])
-            },
+            Instruction::MoveRbxImmImmByte { byte_off, val } => {
+                if *byte_off == 0 {
+                    out.write_all(&[0xc6, 0x03, *val])
+                } else if (-128..128).contains(byte_off) {
+                    out.write_all(&[0xc6, 0x43, *byte_off as u8, *val as u8])
+                } else {
+                    out.write_all(&[0xc6, 0x83])?;
+                    out.write_all(&(*byte_off as u32).to_le_bytes())?;
+                    out.write_all(&[*val as u8])
+                }
+            }
         }
     }
 
@@ -312,6 +316,7 @@ struct Symbol {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(unused)]
 pub enum IoKind {
     UserDefinedIO {
         print: extern "C" fn(&u8),
@@ -333,7 +338,7 @@ pub enum EndKind {
 }
 
 pub struct MachineGen<T: Write> {
-    asm: T,
+    out: T,
     instruction: Vec<Instruction>,
     byte_off: u64,
     symbol_queue: Vec<SymbolId>,
@@ -346,12 +351,14 @@ pub struct MachineGen<T: Write> {
     io: IoKind,
     stack: StackKind,
     end: EndKind,
+
+    output: OutputKind,
 }
 
 impl<T: Write> MachineGen<T> {
-    pub fn new(out: T, io: IoKind) -> Self {
+    pub fn default(out: T, io: IoKind) -> Self {
         Self {
-            asm: out,
+            out,
             symbol_queue: Vec::new(),
             byte_off: 0,
             io,
@@ -361,11 +368,17 @@ impl<T: Write> MachineGen<T> {
             symbols: Vec::new(),
             stack: StackKind::Provided,
             end: EndKind::Return,
+            output: OutputKind::Binary,
         }
     }
 
     pub fn set_stack_kind(mut self, kind: StackKind) -> Self {
         self.stack = kind;
+        self
+    }
+
+    pub fn set_output_kind(mut self, kind: OutputKind) -> Self {
+        self.output = kind;
         self
     }
 
@@ -414,10 +427,17 @@ impl<T: Write> MachineGen<T> {
     }
 }
 
-impl<T: Write> Visitor for MachineGen<T> {
+impl<T: Write> Backend<T> for MachineGen<T> {
+    fn new(out: T, settings: super::Settings, _additional: String) -> Self {
+        Self::default(out, IoKind::PreDefinedIO)
+            .set_end_kind(EndKind::Kill)
+            .set_stack_kind(StackKind::CreateN(settings.stacksize))
+            .set_output_kind(settings.output)
+    }
+
     fn visit_start(&mut self) {
-        match self.end{
-            EndKind::Kill => {},
+        match self.end {
+            EndKind::Kill => {}
             EndKind::Return => {
                 self.push_instrucion(Instruction::PushRbx);
             }
@@ -487,44 +507,63 @@ impl<T: Write> Visitor for MachineGen<T> {
             }
         }
 
-        loop {
-            let mut changed = false;
+        match self.output {
+            OutputKind::Asm => todo!(),
+            OutputKind::Ir => todo!(),
 
-            let mut current_byte = 0;
-            for (index, inst) in self.instruction.iter_mut().enumerate() {
-                if let Some(index) = self.symbols_ins.get(&InstructionIndex(index)) {
-                    if current_byte != self.symbols[index.0].byte_off {
-                        changed = true;
-                        self.symbols[index.0].byte_off = current_byte;
+            OutputKind::Binary | OutputKind::Elf => {
+                loop {
+                    let mut changed = false;
+
+                    let mut current_byte = 0;
+                    for (index, inst) in self.instruction.iter_mut().enumerate() {
+                        if let Some(index) = self.symbols_ins.get(&InstructionIndex(index)) {
+                            if current_byte != self.symbols[index.0].byte_off {
+                                changed = true;
+                                self.symbols[index.0].byte_off = current_byte;
+                            }
+                        }
+                        if let Some(symbol) = self.relocs.get(&InstructionIndex(index)) {
+                            let to = self.symbols[symbol.0].byte_off;
+                            inst.reloc(current_byte, to);
+                        }
+                        current_byte += inst.size();
+                    }
+
+                    if !changed {
+                        break;
                     }
                 }
-                if let Some(symbol) = self.relocs.get(&InstructionIndex(index)) {
-                    let to = self.symbols[symbol.0].byte_off;
-                    inst.reloc(current_byte, to);
+
+                if self.output == OutputKind::Binary {
+                    for ins in &self.instruction {
+                        ins.to_bytes(&mut self.out).unwrap()
+                    }
+                } else {
+                    let mut out = Vec::new();
+                    for ins in &self.instruction {
+                        ins.to_bytes(&mut out).unwrap()
+                    }
+                    write_elf(&mut self.out, &out).expect("Failed to write output");
                 }
-                current_byte += inst.size();
             }
-
-            if !changed {
-                break;
-            }
-        }
-
-        for ins in &self.instruction {
-            ins.to_bytes(&mut self.asm).unwrap()
         }
     }
 
     fn visit_while_start(&mut self, ptr_off: i64) {
         let (start, end) = self.begin_section();
-        self.push_instrucion(Instruction::CmpByteMemZero { byte_off: ptr_off as i32 });
+        self.push_instrucion(Instruction::CmpByteMemZero {
+            byte_off: ptr_off as i32,
+        });
         self.push_reloc_instrucion(end, Instruction::Je { byte_off: -2 });
         self.update_symbol_to_current(start);
     }
 
     fn visit_while_end(&mut self, ptr_off: i64) {
         let (start, end) = self.end_section();
-        self.push_instrucion(Instruction::CmpByteMemZero { byte_off: ptr_off as i32 });
+        self.push_instrucion(Instruction::CmpByteMemZero {
+            byte_off: ptr_off as i32,
+        });
 
         let wanted = self.symbols[start.0].byte_off as i64;
         let mut current = (self.byte_off + 2) as i64;
@@ -543,24 +582,34 @@ impl<T: Write> Visitor for MachineGen<T> {
 
     fn visit_mem_off(&mut self, val: u8, byte_off: i64) {
         if val != 0 {
-            self.push_instrucion(Instruction::AddByteMemRbx { byte_off: byte_off as i32, val });
+            self.push_instrucion(Instruction::AddByteMemRbx {
+                byte_off: byte_off as i32,
+                val,
+            });
         }
     }
 
     fn visit_mem_set(&mut self, val: u8, off: i64) {
-        self.push_instrucion(Instruction::MoveRbxImmImmByte{byte_off: off as i32, val})
+        self.push_instrucion(Instruction::MoveRbxImmImmByte {
+            byte_off: off as i32,
+            val,
+        })
     }
 
     fn visit_ptr_off(&mut self, byte_off: i64) {
         if byte_off != 0 {
-            self.push_instrucion(Instruction::LeaRbxRbx { byte_off: byte_off as i32 });
+            self.push_instrucion(Instruction::LeaRbxRbx {
+                byte_off: byte_off as i32,
+            });
         }
     }
 
     fn visit_print(&mut self, byte_off: i64) {
         match self.io {
             IoKind::UserDefinedIO { .. } => {
-                self.push_instrucion(Instruction::LeaRdiRbx { byte_off: byte_off as i32 });
+                self.push_instrucion(Instruction::LeaRdiRbx {
+                    byte_off: byte_off as i32,
+                });
                 let wanted = self.symbols[0].byte_off as i64;
                 let current = (self.byte_off + 5) as i64;
                 self.push_reloc_instrucion(
@@ -574,7 +623,9 @@ impl<T: Write> Visitor for MachineGen<T> {
                 self.push_instrucion(Instruction::MoveImmRax(1)); // sys_write
                 self.push_instrucion(Instruction::MoveImmRdi(1)); // stdout
                 self.push_instrucion(Instruction::MoveImmRdx(1)); // length
-                self.push_instrucion(Instruction::LeaRsiRbx { byte_off: byte_off  as i32 });
+                self.push_instrucion(Instruction::LeaRsiRbx {
+                    byte_off: byte_off as i32,
+                });
                 self.push_instrucion(Instruction::Syscall);
             }
         }
@@ -583,7 +634,9 @@ impl<T: Write> Visitor for MachineGen<T> {
     fn visit_read(&mut self, byte_off: i64) {
         match self.io {
             IoKind::UserDefinedIO { .. } => {
-                self.push_instrucion(Instruction::LeaRdiRbx { byte_off: byte_off as i32 });
+                self.push_instrucion(Instruction::LeaRdiRbx {
+                    byte_off: byte_off as i32,
+                });
                 let wanted = self.symbols[1].byte_off as i64;
                 let current = (self.byte_off + 5) as i64;
                 self.push_reloc_instrucion(
@@ -597,9 +650,294 @@ impl<T: Write> Visitor for MachineGen<T> {
                 self.push_instrucion(Instruction::MoveImmRax(0)); // sys_read
                 self.push_instrucion(Instruction::MoveImmRdi(0)); // stdin
                 self.push_instrucion(Instruction::MoveImmRdx(1)); // length
-                self.push_instrucion(Instruction::LeaRsiRbx { byte_off: byte_off as i32 });
+                self.push_instrucion(Instruction::LeaRsiRbx {
+                    byte_off: byte_off as i32,
+                });
                 self.push_instrucion(Instruction::Syscall);
             }
         }
     }
+}
+
+// ----------- ELF ---------
+
+trait ReprBytes: Sized {
+    fn repr_bytes<'a>(&'a self) -> &'a [u8] {
+        unsafe {
+            std::slice::from_raw_parts(
+                self as *const Self as *const u8,
+                std::mem::size_of::<Self>(),
+            )
+        }
+    }
+}
+
+macro_rules! impl_ints {
+    ($type:ty, $int:ty) => {
+        impl std::convert::From<$int> for $type {
+            fn from(value: $int) -> Self {
+                Self(value.to_le_bytes())
+            }
+        }
+        impl std::convert::From<$type> for $int {
+            fn from(value: $type) -> Self {
+                Self::from_le_bytes(value.0)
+            }
+        }
+
+        impl ReprBytes for $type {
+            fn repr_bytes(&self) -> &[u8] {
+                &self.0
+            }
+        }
+    };
+}
+
+impl std::convert::From<bool> for U8LE {
+    fn from(value: bool) -> Self {
+        Self(if value { 1 } else { 0u8 }.to_le_bytes())
+    }
+}
+
+#[repr(C)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
+struct U8LE([u8; 1]);
+#[repr(C)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
+struct U16LE([u8; 2]);
+#[repr(C)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
+struct U32LE([u8; 4]);
+#[repr(C)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
+struct USizeLE([u8; 8]);
+
+impl_ints!(U8LE, u8);
+impl_ints!(U16LE, u16);
+impl_ints!(U32LE, u32);
+impl_ints!(USizeLE, u64);
+
+#[repr(C, packed)]
+struct Header {
+    magic: [u8; 4],
+    class: U8LE,
+    data: U8LE,
+    version: U8LE,
+    osabi: U8LE,
+    abiversion: U8LE,
+    pad: [u8; 7],
+    f_type: U16LE,
+    machine: U16LE,
+    version_2: U32LE,
+    entry: USizeLE,
+    program_header_off: USizeLE,
+    section_header_off: USizeLE,
+    flags: U32LE,
+    header_size: U16LE,
+
+    program_header_size: U16LE,
+    program_header_num: U16LE,
+
+    section_header_size: U16LE,
+    section_header_num: U16LE,
+
+    index_section_header_names: U16LE,
+}
+
+impl ReprBytes for Header {}
+
+#[repr(C, packed)]
+#[derive(Default)]
+struct ProgramHeader {
+    p_type: U32LE,
+    flags: U32LE,
+    file_offset: USizeLE,
+    virtual_addr: USizeLE,
+    physical_addr: USizeLE,
+    file_size: USizeLE,
+    mem_size: USizeLE,
+    align: USizeLE,
+}
+impl ReprBytes for ProgramHeader {}
+
+#[repr(C, packed)]
+#[derive(Default)]
+struct SectionHeader {
+    name_off: U32LE,
+    s_type: U32LE,
+    flags: USizeLE,
+    virtual_address: USizeLE,
+    file_off: USizeLE,
+    file_size: USizeLE,
+    link: U32LE,
+    info: U32LE,
+    addr_align: USizeLE,
+    ent_size: USizeLE,
+}
+
+impl ReprBytes for SectionHeader {}
+
+#[repr(C, packed)]
+#[derive(Default)]
+struct SymbolTableEntry {
+    name: U32LE,
+    info: U8LE,
+    other: U8LE,
+    section_index: U16LE,
+    addr: USizeLE,
+    sym_size: USizeLE,
+}
+
+impl ReprBytes for SymbolTableEntry {}
+
+fn write_elf(file: &mut impl std::io::Write, instructions: &[u8]) -> std::io::Result<()> {
+    const PROGRAM_HEADERS: usize = 1;
+    const SECTION_HEADERS: usize = 4;
+    const SYMBOLS: usize = 2;
+    const PROGRAM_ALIGN: u64 = 0x1000;
+    const PROGRAM_START: u64 = 0x401000;
+
+    macro_rules! construct_str_table {
+        ($vis:vis mod $mode_name:ident{$table_name:ident, $($name:ident:$str:expr $(,)?)*}) => {
+            $vis mod $mode_name{
+                construct_str_table!("", $($name:$str),*);
+                pub const $table_name: &str = concat!($(concat!($str, '\0'),)*);
+            }
+        };
+        ($existing:expr, $name:ident:$str:expr, $($name_repr:ident:$str_repr:expr),*) => {
+            pub const $name: usize = $existing.len();
+            construct_str_table!(concat!($existing, $str, '\0'), $($name_repr:$str_repr),*);
+        };
+        ($existing:expr, $name:ident:$str:expr) => {
+            pub const $name: usize = $existing.len();
+        };
+        ($existing:expr) => {
+        };
+    }
+
+    construct_str_table!(mod str_table{TABLE, _EMPTY:"",TEXT:".text", STRTAB:".strtab", SYMTAB:".symtab", START:"_start"});
+
+    let elf_header_start = 0;
+    let program_header_start = elf_header_start + std::mem::size_of::<Header>();
+    let section_header_start =
+        program_header_start + std::mem::size_of::<ProgramHeader>() * PROGRAM_HEADERS;
+    let str_table_start =
+        section_header_start + std::mem::size_of::<SectionHeader>() * SECTION_HEADERS;
+
+    let symbol_table_start = str_table_start + str_table::TABLE.len();
+
+    let program_start_unaligned =
+        symbol_table_start + std::mem::size_of::<SymbolTableEntry>() * SYMBOLS;
+
+    let program_start_file =
+        ((program_start_unaligned as u64 + PROGRAM_ALIGN - 1) / PROGRAM_ALIGN) * PROGRAM_ALIGN;
+
+    let programs: [ProgramHeader; PROGRAM_HEADERS] = [ProgramHeader {
+        p_type: 1.into(),  // PT_LOAD
+        flags: 0x5.into(), // PT_READ PT_EXECUTE
+        file_offset: program_start_file.into(),
+        virtual_addr: PROGRAM_START.into(),
+        physical_addr: PROGRAM_START.into(),
+        file_size: (instructions.len() as u64).into(),
+        mem_size: (instructions.len() as u64).into(),
+        align: PROGRAM_ALIGN.into(),
+    }];
+
+    let sections: [SectionHeader; SECTION_HEADERS] = [
+        SectionHeader::default(),
+        SectionHeader {
+            name_off: (str_table::STRTAB as u32).into(),
+            s_type: 0x3.into(), // zero terminated string
+            flags: 0.into(),
+            virtual_address: 0.into(),
+            file_off: (str_table_start as u64).into(),
+            file_size: (str_table::TABLE.len() as u64).into(),
+            link: 0.into(),
+            info: 0.into(),
+            addr_align: 1.into(),
+            ent_size: 0.into(),
+        },
+        SectionHeader {
+            name_off: (str_table::SYMTAB as u32).into(),
+            s_type: 0x2.into(), // symbol table
+            flags: 0.into(),
+            virtual_address: 0.into(),
+            file_off: (symbol_table_start as u64).into(),
+            file_size: ((std::mem::size_of::<SymbolTableEntry>() * SYMBOLS) as u64).into(),
+            link: 1.into(), // str table
+            info: 1.into(), // first global symbol
+            addr_align: 1.into(),
+            ent_size: (std::mem::size_of::<SymbolTableEntry>() as u64).into(),
+        },
+        SectionHeader {
+            name_off: (str_table::TEXT as u32).into(),
+            s_type: 1.into(), // SHT_PROGBITS
+            flags: 6.into(),  // flags A(allocate in image?) X(exacutable?)
+            virtual_address: PROGRAM_START.into(),
+            file_off: (program_start_file as u64).into(),
+            file_size: (instructions.len() as u64).into(),
+            link: 0.into(),
+            info: 0.into(),
+            addr_align: PROGRAM_ALIGN.into(),
+            ent_size: 0.into(),
+        },
+    ];
+
+    let symbols: [SymbolTableEntry; SYMBOLS] = [
+        SymbolTableEntry::default(),
+        SymbolTableEntry {
+            name: (str_table::START as u32).into(),
+            info: (0x12).into(),     //global function
+            other: 0.into(),         // default
+            section_index: 3.into(), //program section
+            addr: PROGRAM_START.into(),
+            sym_size: (instructions.len() as u64).into(),
+        },
+    ];
+
+    let header = Header {
+        magic: [0x7f, 0x45, 0x4c, 0x46],
+        class: 2.into(),   // 64 bit
+        data: 1.into(),    // le
+        version: 1.into(), //version 1
+        osabi: 1.into(),   // system-v
+        abiversion: 0.into(),
+        pad: [0; 7],
+        f_type: 2.into(),     // executable file
+        machine: 0x3E.into(), // x86-64
+        version_2: 1.into(),
+        entry: PROGRAM_START.into(),
+        program_header_off: (program_header_start as u64).into(),
+        section_header_off: (section_header_start as u64).into(),
+        flags: 0.into(),
+        header_size: (std::mem::size_of::<Header>() as u16).into(),
+        program_header_size: (std::mem::size_of::<ProgramHeader>() as u16).into(),
+        program_header_num: (PROGRAM_HEADERS as u16).into(),
+        section_header_size: (std::mem::size_of::<SectionHeader>() as u16).into(),
+        section_header_num: (SECTION_HEADERS as u16).into(),
+        index_section_header_names: 1.into(),
+    };
+
+    file.write_all(header.repr_bytes())?;
+
+    for ph in &programs {
+        file.write_all(ph.repr_bytes())?;
+    }
+
+    for section in &sections {
+        file.write_all(section.repr_bytes())?;
+    }
+
+    file.write_all(str_table::TABLE.as_bytes())?;
+
+    for symbol in &symbols {
+        file.write_all(symbol.repr_bytes())?;
+    }
+
+    // alignment
+    for _ in program_start_unaligned..(program_start_file as usize) {
+        file.write_all(&[0])?;
+    }
+
+    file.write_all(&instructions)
 }

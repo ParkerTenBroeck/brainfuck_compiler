@@ -1,28 +1,20 @@
 use std::{iter::Peekable, str::Chars};
 
-pub struct Brain<'a> {
+use super::stages::Ir;
+
+pub struct BfParser<'a> {
     chars: Peekable<Chars<'a>>,
 }
 
-type Ast = Vec<AstNode>;
-
-#[derive(Debug)]
-pub enum AstNode {
-    While(Ast),
-    OffPtr(i64),
-    ChangeValue(u8),
-    Output,
-    Input,
-}
-
-impl<'a> Brain<'a> {
+impl<'a> BfParser<'a> {
     pub fn new(data: &'a str) -> Self {
         Self {
             chars: data.chars().peekable(),
         }
     }
-    pub fn parse(&mut self) -> Vec<AstNode> {
-        let mut top = Ast::new();
+
+    pub fn parse_good(&mut self) -> Vec<Ir> {
+        let mut top = Vec::new();
         let mut stack = Vec::new();
 
         enum State {
@@ -39,26 +31,29 @@ impl<'a> Brain<'a> {
             match state {
                 State::Default => {
                     match char {
-                        '+'|'-' => {
-                            val = if *char=='+'{1}else{-1};
+                        '+' | '-' => {
+                            val = if *char == '+' { 1 } else { -1 };
                             state = State::Val
-                        },
-                        '>'|'<' => {
-                            val = if *char=='>'{1}else{-1};
+                        }
+                        '>' | '<' => {
+                            val = if *char == '>' { 1 } else { -1 };
                             state = State::Ptr
-                        },
-                        '.' => top.push(AstNode::Output),
-                        ',' => top.push(AstNode::Input),
+                        }
+                        '.' => top.push(Ir::Print { ptr_off: 0 }),
+                        ',' => top.push(Ir::Input { ptr_off: 0 }),
                         '[' => {
                             stack.push(top);
                             top = Vec::new();
                         }
                         ']' => {
-                            let mut tmp: Vec<AstNode> = stack.pop().unwrap();
+                            let mut tmp: Vec<Ir> = stack.pop().unwrap();
                             // if the first statement in our program is an if statement
                             // uh dont include it
                             if !(stack.is_empty() && tmp.is_empty()) {
-                                tmp.push(AstNode::While(top));
+                                tmp.push(Ir::While {
+                                    inside: top,
+                                    ptr_off: 0,
+                                });
                             }
                             top = tmp;
                         }
@@ -69,7 +64,7 @@ impl<'a> Brain<'a> {
                     '>' => val += 1,
                     '<' => val -= 1,
                     _ => {
-                        top.push(AstNode::OffPtr(val));
+                        top.push(Ir::OffsetPtr { ptr_off: val });
                         state = State::Default;
                         consume = false;
                     }
@@ -78,7 +73,10 @@ impl<'a> Brain<'a> {
                     '+' => val += 1,
                     '-' => val -= 1,
                     _ => {
-                        top.push(AstNode::ChangeValue(val as u8));
+                        top.push(Ir::OffsetValue {
+                            val_off: val as u8,
+                            ptr_off: 0,
+                        });
                         state = State::Default;
                         consume = false;
                     }
@@ -94,25 +92,34 @@ impl<'a> Brain<'a> {
         top
     }
 
-    pub fn parse_bad(&mut self) -> Vec<AstNode> {
-        let mut top = Ast::new();
+    pub fn parse(&mut self) -> Vec<Ir> {
+        let mut top = Vec::new();
         let mut stack = Vec::new();
 
         while let Some(char) = self.chars.next() {
             match char {
-                '+' => top.push(AstNode::ChangeValue(1)),
-                '>' => top.push(AstNode::OffPtr(1)),
-                '-' => top.push(AstNode::ChangeValue(255)),
-                '<' => top.push(AstNode::OffPtr(-1)),
-                '.' => top.push(AstNode::Output),
-                ',' => top.push(AstNode::Input),
+                '+' => top.push(Ir::OffsetValue {
+                    val_off: 1,
+                    ptr_off: 0,
+                }),
+                '>' => top.push(Ir::OffsetPtr { ptr_off: 1 }),
+                '-' => top.push(Ir::OffsetValue {
+                    val_off: 255,
+                    ptr_off: 0,
+                }),
+                '<' => top.push(Ir::OffsetPtr { ptr_off: -1 }),
+                '.' => top.push(Ir::Print { ptr_off: 0 }),
+                ',' => top.push(Ir::Input { ptr_off: 0 }),
                 '[' => {
                     stack.push(top);
                     top = Vec::new();
                 }
                 ']' => {
-                    let mut tmp: Vec<AstNode> = stack.pop().unwrap();
-                    tmp.push(AstNode::While(top));
+                    let mut tmp: Vec<Ir> = stack.pop().unwrap();
+                    tmp.push(Ir::While {
+                        inside: top,
+                        ptr_off: 0,
+                    });
                     top = tmp;
                 }
                 _ => {}

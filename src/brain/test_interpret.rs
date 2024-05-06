@@ -1,3 +1,0 @@
-
-
-type Program = Vec<ProgramWord>;
