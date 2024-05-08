@@ -5,7 +5,7 @@ pub struct Stage1;
 impl Stage for Stage1 {
     fn apply(&mut self, input: &mut Vec<Ir>) -> Vec<Ir> {
         let mut iter = input.drain(..).peekable();
-        while let Some(item) = iter.peek(){
+        while let Some(item) = iter.peek() {
             if !matches!(item, Ir::While { .. }) {
                 break;
             }
@@ -19,7 +19,6 @@ impl Stage1 {
     fn apply_(&mut self, input: impl Iterator<Item = Ir>) -> Vec<Ir> {
         let mut top = Vec::new();
 
-
         enum State {
             Default,
             Ptr,
@@ -28,10 +27,9 @@ impl Stage1 {
 
         let mut offset: i64 = 0;
         let mut state = State::Default;
-        
 
         for item in input {
-            match (&state, &item){
+            match (&state, &item) {
                 (State::Ptr, Ir::OffsetPtr { ptr_off }) => {
                     offset += *ptr_off;
                     continue;
@@ -46,7 +44,10 @@ impl Stage1 {
                     continue;
                 }
                 (State::Val(p), _) => {
-                    top.push(Ir::OffsetValue { val_off: offset as u8, ptr_off: *p });
+                    top.push(Ir::OffsetValue {
+                        val_off: offset as u8,
+                        ptr_off: *p,
+                    });
                     state = State::Default;
                 }
                 (State::Default, Ir::OffsetPtr { ptr_off }) => {

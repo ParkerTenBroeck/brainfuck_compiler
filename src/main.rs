@@ -69,7 +69,7 @@ fn main() -> std::io::Result<()> {
 
     let program = std::fs::read_to_string(args.input)?;
 
-    let mut ir = BfParser::new(&program).parse();
+    let mut ir = BfParser::new(&program).parse_good();
 
     if args.opt_level >= 1 {
         ir = Stage1.apply(&mut ir)
