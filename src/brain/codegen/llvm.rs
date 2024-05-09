@@ -10,7 +10,7 @@ pub struct Llvm<W: Write> {
     out: W,
     settings: super::Settings,
     additional: String,
-    overflow: bool,
+    allow_overflow: bool,
     next_loop: usize,
     stack: Vec<usize>
 }
@@ -21,6 +21,14 @@ impl<W: Write> Llvm<W> {
             super::CellSize::C1 => "i8",
             super::CellSize::C2 => "i16",
             super::CellSize::C4 => "i32",
+        }
+    }
+
+    fn cell_size(&mut self) -> usize {
+        match self.settings.cell_size {
+            super::CellSize::C1 => 1,
+            super::CellSize::C2 => 2,
+            super::CellSize::C4 => 3,
         }
     }
 
@@ -40,7 +48,7 @@ impl<W: Write> Backend<W> for Llvm<W> {
             out,
             settings,
             additional,
-            overflow: true,
+            allow_overflow: true,
             next_loop: 0,
             stack: Vec::new(),
         }
@@ -51,85 +59,140 @@ impl<W: Write> Backend<W> for Llvm<W> {
         let cell_type = self.cell_type();
         let ptr_align = self.cell_align();
         let stack_size = self.settings.stacksize;
-        let stack_size_m1 = self.settings.stacksize - 1;
-        let nsw = if self.overflow { "nsw" } else { "" };
+        let stack_size_bytes = self.settings.stacksize * self.cell_size() as u64;
+        let nsw = if self.allow_overflow { "" } else { "nsw" };
+        let print_buff_len = 1024;
 
-        let ptr_type = format!("ptr noalias nocapture noundef nonnull align {ptr_align}");
+        let tape_ptr_type = format!("ptr noalias nocapture noundef nonnull align {ptr_align}");
+        let off_ptr_type = format!("ptr noalias nocapture noundef nonnull align 8");
 
         writeln!(self.ir, r#"
-@tape = internal global <{{ [{stack_size} x {cell_type}] }}> zeroinitializer, align {ptr_align}
-@tape_start = local_unnamed_addr constant <{{ ptr }}> <{{ptr @tape}}>, align 8
-@tape_end = local_unnamed_addr constant <{{ ptr }}> <{{ptr getelementptr inbounds ({cell_type}, ptr @tape, i64 {stack_size_m1})}}>, align 8
+
+@print_buff = local_unnamed_addr global <{{ [{print_buff_len} x i8] }}> zeroinitializer, align 1
+@print_buff_pos = local_unnamed_addr global i64 0, align 8
 
 @str.0 = internal constant [13 x i8] c"Hello, World\0a"
 @str.1 = internal constant [7 x i8] c"Panic!\0a"
 
-define private i32 @print({ptr_type} %str, i64 %len) nounwind {{
-    %r = call i32 asm sideeffect "syscall", "={{rax}},{{rax}},{{rdi}},{{rdx}},{{rsi}}"(i64 1, i64 1, i64 %len, ptr align 1 %str)
+declare i32 @write(i32 %fd, ptr %str, i64 %len)
+
+
+declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg) 
+declare void @llvm.lifetime.start.p0(i64 immarg, ptr nocapture) 
+declare void @llvm.lifetime.end.p0(i64 immarg, ptr nocapture) 
+declare void @llvm.memcpy.i64(ptr %dest, ptr %src, i64 %len, i1 %vol)
+declare void @llvm.memset.inline.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg) 
+
+
+define private i32 @print_(ptr readonly noalias nocapture noundef nonnull align 1 %str, i64 %len) nounwind {{
+    %r = tail call i32 asm sideeffect "syscall", "={{rax}},0,{{rdi}},{{rdx}},{{rsi}},~{{cx}},~{{flags}},~{{r11}}"(i64 1, i64 1, i64 %len, ptr align 1 %str)
+    ;%r = tail call i32 @write(i32 1, ptr %str, i64 %len)
     ret i32 %r
 }}
-define private i32 @read({ptr_type} %str, i64 %len) nounwind {{
-    %r = call i32 asm sideeffect "syscall", "={{rax}},{{rax}},{{rdi}},{{rdx}},{{rsi}}"(i64 0, i64 0, i64 %len, ptr align 1 %str)
+
+
+
+
+define private void @flush(){{
+    %print_buff_pos = load i64, ptr @print_buff_pos
+    %has_some = icmp sgt i64 %print_buff_pos, 0
+
+    br label %print
+    print:
+        store i64 0, ptr @print_buff_pos
+        call void @print_(ptr @print_buff, i64 %print_buff_pos)
+        ret void
+    nothing:
+        ret void
+}}
+
+define private void @print(ptr readonly noalias nocapture noundef nonnull align 1 %str, i64 %len) nounwind {{
+    %print_buff_pos = load i64, ptr @print_buff_pos
+    %added = add i64 %print_buff_pos, %len
+    %not_enough = icmp sge i64 %added, {print_buff_len}
+
+    br i1 %not_enough, label %flush, label %append
+
+    flush:
+        tail call void @flush()
+        store i64 %len, ptr @print_buff_pos
+        call void @llvm.memcpy.i64(ptr @print_buff, ptr %str, i64 %len, i1 false)
+
+        ret void
+    append:
+        %buf_app_start = getelementptr inbounds i8, ptr @print_buff, i64 %print_buff_pos
+        call void @llvm.memcpy.i64(ptr %buf_app_start, ptr %str, i64 %len, i1 false)
+        store i64 %added, ptr @print_buff_pos
+
+        ret void
+}}
+
+define private i32 @read_(ptr writeonly noalias nocapture noundef nonnull align 1 %str, i64 %len) nounwind {{
+    tail call void @flush()
+    %r = call i32 asm sideeffect "syscall", "={{rax}},{{rax}},{{rdi}},{{rdx}},{{rsi}},~{{rcx}},~{{r11}}"(i64 0, i64 0, i64 %len, ptr align 1 %str)
     ret i32 %r
 }}
 define void @exit(i64 %code) noreturn nounwind{{
-    call void asm sideeffect "syscall", "{{rdi}},{{rax}}"(i64 %code, i64 60)
+    call void asm sideeffect "syscall", "{{rdi}},{{rax}},~{{rcx}},~{{r11}}"(i64 %code, i64 60)
     unreachable
     ret void
 }}
 
-define private ptr @verify_tape_ptr({ptr_type} %ptr) {{
+define i64 @verify_offset(i64 %offset) {{
     start:
-        %tape_ptr_start = load ptr, ptr @tape_start, align 8
-        %tape_ptr_end = load ptr, ptr @tape_end, align 8
-        
-        %lower = icmp uge ptr %ptr,  %tape_ptr_start
+        %lower = icmp sge i64 %offset, 0
         br i1 %lower, label %good.0, label %poison
     good.0:
-        %upper = icmp ule ptr %ptr, %tape_ptr_end
+        %upper = icmp sle i64 %offset, {stack_size}
         br i1 %upper, label %good.1, label %poison
     good.1:
-        ret ptr %ptr
+        ret i64 %offset
     poison:
         call void @print(ptr @str.1, i64 7)
-        ret ptr poison
+        call void @exit(i64 -1)
+        unreachable
 }}
 
-define private ptr @get_offset_tape({ptr_type} %ptr, i64 %off) unnamed_addr  {{
-    %p.before = load ptr, ptr %ptr
-    %p.add = getelementptr {cell_type}, ptr %p.before, i64 %off
-    %p.after = tail call ptr @verify_tape_ptr(ptr %p.add)
-    ret ptr %p.after
+define ptr @get_offset_tape({tape_ptr_type} %tape, {off_ptr_type} %ptr_off, i64 %off) unnamed_addr alwaysinline {{
+    %p.off = load i64, ptr %ptr_off
+    %c.off = add i64 %p.off, %off
+
+    ;call void @verify_offset(i64 %c.off)
+
+    %p.add = getelementptr inbounds {cell_type}, ptr %tape, i64 %c.off
+    
+    ret ptr %p.add
 }}
 
-define private void @print_from_tape_off({ptr_type} %ptr, i64 %off) unnamed_addr  {{
-    %po = call ptr @get_offset_tape(ptr %ptr, i64 %off)
+define void @print_from_tape_off({tape_ptr_type} %tape, {off_ptr_type} %ptr_off, i64 %off) unnamed_addr alwaysinline  {{
+    %po = call ptr @get_offset_tape({tape_ptr_type} %tape, {off_ptr_type} %ptr_off, i64 %off)
     tail call void @print(ptr %po, i64 1)
     ret void
 }}
 
-define private void @read_into_tape_off({ptr_type} %ptr, i64 %off) unnamed_addr {{
-    %po = call ptr @get_offset_tape(ptr %ptr, i64 %off)
-    tail call void @read(ptr %po, i64 1)
+define void @read_into_tape_off({tape_ptr_type} %tape, {off_ptr_type} %ptr_off, i64 %off) unnamed_addr {{
+    %po = call ptr @get_offset_tape({tape_ptr_type} %tape, {off_ptr_type} %ptr_off, i64 %off)
+    tail call void @read_(ptr %po, i64 1)
     ret void
 }}
 
-define private void @offset_tape_head({ptr_type} %ptr, i64 %off) unnamed_addr {{
-    %po = call ptr @get_offset_tape(ptr %ptr, i64 %off)
-    store ptr %po, ptr %ptr
+define void @offset_tape_head({off_ptr_type} %ptr_off, i64 %off) unnamed_addr {{
+    %p = load i64, ptr %ptr_off
+    %p.after = add i64 %p, %off
+    store i64 %p.after, ptr %ptr_off
     ret void
 }}
 
-define private void @set_tape_val({ptr_type} %ptr, i64 %off, {cell_type} %val) unnamed_addr {{
-    %po = call ptr @get_offset_tape(ptr %ptr, i64 %off)
+define void @set_tape_val({tape_ptr_type} %tape, {off_ptr_type} %ptr_off, i64 %off, {cell_type} %val) unnamed_addr {{
+    %po = call ptr @get_offset_tape({tape_ptr_type} %tape, {off_ptr_type} %ptr_off, i64 %off)
 
     store {cell_type} %val, ptr %po
 
     ret void 
 }}
 
-define private void @offset_tape_val(ptr nocapture noalias align {ptr_align} %ptr, i64 %off, {cell_type} %val) unnamed_addr {{  
-    %po = call ptr @get_offset_tape(ptr %ptr, i64 %off)
+define void @offset_tape_val({tape_ptr_type} %tape, {off_ptr_type} %ptr_off, i64 %off, {cell_type} %val) unnamed_addr {{  
+    %po = call ptr @get_offset_tape({tape_ptr_type} %tape, {off_ptr_type} %ptr_off, i64 %off)
 
     %val.before = load {cell_type}, ptr %po
     %val.after = add {nsw} {cell_type} %val.before, %val
@@ -138,8 +201,8 @@ define private void @offset_tape_val(ptr nocapture noalias align {ptr_align} %pt
     ret void
 }}
 
-define private i1 @calculate_tape_off_cond({ptr_type} %ptr, i64 %off) unnamed_addr {{
-    %po = call ptr @get_offset_tape(ptr %ptr, i64 %off)
+define i1 @calculate_tape_off_cond({tape_ptr_type} %tape, {off_ptr_type} %ptr_off, i64 %off) unnamed_addr {{
+    %po = call ptr @get_offset_tape({tape_ptr_type} %tape, {off_ptr_type} %ptr_off, i64 %off)
 
     %val = load {cell_type}, ptr %po
 
@@ -148,50 +211,39 @@ define private i1 @calculate_tape_off_cond({ptr_type} %ptr, i64 %off) unnamed_ad
     ret i1 %res
 }}
 
+
+
 define void @_start() unnamed_addr {{
     start:
-    %tape_position = alloca ptr
-    store ptr @tape, ptr %tape_position
+
+    %tape = alloca [{stack_size} x {cell_type}], align {ptr_align}
+    call void @llvm.lifetime.start.p0(i64 {stack_size_bytes}, ptr nonnull %tape)
+    call void @llvm.memset.p0.i64(ptr noundef nonnull align {ptr_align} dereferenceable({stack_size_bytes}) %tape, i8 0, i64 {stack_size_bytes}, i1 false)
+
+
+    %tape_position = alloca i64
+    store i64 0, ptr %tape_position
 "#).unwrap();
 
         // write!(self.ir, "call void @llvm.memset.inline.p0.i64()").unwrap();
     }
 
     fn visit_end(&mut self) {
-        self.ir.push_str(
+        use std::fmt::Write;
+        let stack_size_bytes = self.settings.stacksize * self.cell_size() as u64;
+
+        write!(self.ir,
             r#"
-    ; %r = call i32 @read(ptr align 1 @tape, i64 200)
-    ; %read = sext i32 %r to i64
-
-    ; %tape_ptr_start = load ptr, ptr @tape_start
-    ; %tape_ptr_end = load ptr, ptr @tape_end
     
-    ;call void @tape_ptr_set(ptr align 1 %tape_ptr, i8 65)
-    ;call void @ptr_add(ptr align 1 %tape_ptr, i64 1)
-    ;call void @tape_ptr_set(ptr align 1 %tape_ptr, i8 66)
+    call void @llvm.lifetime.end.p0(i64 {stack_size_bytes}, ptr nonnull %tape)
 
-    ;call void @offset_tape_head(ptr %tape_position, i64 1)
-
-    ;call void @set_tape_val(ptr %tape_position, i64 0, i8 65)
-    ;call void @set_tape_val(ptr %tape_position, i64 1, i8 66)
-    ;call void @set_tape_val(ptr %tape_position, i64 2, i8 67)
-    ;call void @set_tape_val(ptr %tape_position, i64 3, i8 68)
-    ;call void @set_tape_val(ptr %tape_position, i64 4, i8 69)
-    ;call void @set_tape_val(ptr %tape_position, i64 -1, i8 69)
-    ;call i32 @print(ptr @tape, i64 4)
-    ;call void @print_from_tape_off(ptr %tape_position, i64 0)
-    ;call void @print_from_tape_off(ptr %tape_position, i64 1)
-    ;call void @print_from_tape_off(ptr %tape_position, i64 2)
-    
-    ;call i32 @print(ptr align 1 @str.0, i64 13)
-
-
+    call void @flush()
     call void @exit(i32 0)
     unreachable
     ret void
-}
+}}
 "#,
-        );
+        ).unwrap();
         match self.settings.output {
             super::OutputKind::Asm => {
                 let mut opt: std::process::Child = Command::new("opt")
@@ -221,9 +273,9 @@ define void @_start() unnamed_addr {{
 
             super::OutputKind::Elf => {
                 let mut opt: std::process::Child = Command::new("opt")
-                    // .args([
-                    //      "-O3"
-                    //     ])
+                    .args([
+                         "-O3"
+                        ])
                     .stdout(Stdio::piped())
                     .stdin(Stdio::piped())
                     .spawn()
@@ -242,9 +294,11 @@ define void @_start() unnamed_addr {{
                 //     .unwrap();
 
                 let mut comp = Command::new("clang")
-                    .args(["-x", "ir", "-static", 
-                    "-O0", 
-                    "-nostdlib", "-"])
+                    .args(["-x", "ir", 
+                    "-static", 
+                    "-O3", 
+                    "-nostdlib", 
+                    "-"])
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .spawn()
@@ -257,7 +311,7 @@ define void @_start() unnamed_addr {{
                 //     .spawn()
                 //     .unwrap();
                 if let Some(input) = &mut comp.stdin {
-                    input.write_all(self.ir.as_bytes()).unwrap();
+                    input.write_all(&out.stdout).unwrap();
                 }
                 let out = comp.wait_with_output().unwrap();
                 self.out.write_all(&out.stdout).unwrap();
@@ -293,7 +347,7 @@ define void @_start() unnamed_addr {{
             "
 \tbr label %loop_{curr}_start
 \tloop_{curr}_start:
-\t%loop_{curr}_cond = call i1 @calculate_tape_off_cond(ptr %tape_position, i64 {off})
+\t%loop_{curr}_cond = call i1 @calculate_tape_off_cond(ptr %tape, ptr %tape_position, i64 {off})
 \tbr i1 %loop_{curr}_cond, label %loop_{curr}_enter, label %loop_{curr}_end 
 \tloop_{curr}_enter:
 "
@@ -314,7 +368,7 @@ define void @_start() unnamed_addr {{
         let val = val as i8;
         writeln!(
             self.ir,
-            "\tcall void @offset_tape_val(ptr %tape_position, i64 {off}, i8 {val})"
+            "\tcall void @offset_tape_val(ptr %tape, ptr %tape_position, i64 {off}, i8 {val})"
         )
         .unwrap();
     }
@@ -324,7 +378,7 @@ define void @_start() unnamed_addr {{
         let val = val as i8;
         writeln!(
             self.ir,
-            "\tcall void @set_tape_val(ptr %tape_position, i64 {off}, i8 {val})"
+            "\tcall void @set_tape_val(ptr %tape, ptr %tape_position, i64 {off}, i8 {val})"
         )
         .unwrap();
     }
@@ -342,7 +396,7 @@ define void @_start() unnamed_addr {{
         use std::fmt::Write;
         writeln!(
             self.ir,
-            "\tcall void @print_from_tape_off(ptr %tape_position, i64 {off})"
+            "\tcall void @print_from_tape_off(ptr %tape, ptr %tape_position, i64 {off})"
         )
         .unwrap();
     }
@@ -351,7 +405,7 @@ define void @_start() unnamed_addr {{
         use std::fmt::Write;
         writeln!(
             self.ir,
-            "\tcall void @read_into_tape_off(ptr %tape_position, i64 {off})"
+            "\tcall void @read_into_tape_off(ptr %tape, ptr %tape_position, i64 {off})"
         )
         .unwrap();
     }
